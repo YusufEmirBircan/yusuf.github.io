@@ -1,14 +1,5 @@
 [
   {
-    "id": "news_manual_1786538557",
-    "title": "Test HABERİ",
-    "summary": "TEST TEST TEST TEST",
-    "content": "Test test test test",
-    "source": "Özel İçerik",
-    "image": "https://images.unsplash.com/photo-1585829365295-ab7cd400c167?auto=format&fit=crop&w=800&q=80",
-    "date": "2026-08-12 12:42"
-  },
-  {
     "id": "news_1786536591",
     "title": "2025'te İçerik Üretimini Dönüştürecek En İyi 10 Yapay Zeka Aracı",
     "summary": "2025 yılında dijital içerik dünyasında öne geçmek isteyen üreticiler için yapay zeka araçları vazgeçilmez bir güç haline geldi. Metin yazımından video kurgusuna, görsel tasarımdan ses klonlamaya kadar içerik üretim süreçlerini baştan sona dönüştürecek en etkili 10 yapay zeka platformunu inceledik.",
