@@ -8,15 +8,7 @@ import ssl
 from datetime import datetime
 from google import genai
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import (
-    Application,
-    CommandHandler,
-    CallbackQueryHandler,
-    MessageHandler,
-    ConversationHandler,
-    ContextTypes,
-    filters
-)
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
 ssl._create_default_https_context = ssl._create_unverified_context
 
@@ -30,13 +22,7 @@ GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 
 GITHUB_REPO = "YusufEmirBircan/yusufEmirBircan.github.io"
 NEWS_FILE_PATH = "news.json"
-PROCESSED_FILE = "processed_urls.json"
-PENDING_FILE = "pending_news.json"
 
-# Manuel Haber Ekleme Adımları
-TITLE, SUMMARY, CONTENT, IMAGE = range(4)
-
-# Local secret override
 if os.path.exists("config.json"):
     try:
         with open("config.json", "r", encoding="utf-8") as f:
@@ -48,7 +34,6 @@ if os.path.exists("config.json"):
     except Exception:
         pass
 
-# RSS Kaynakları
 RSS_FEEDS = [
     "https://webtekno.com/rss.xml",
     "https://shiftdelete.net/feed",
@@ -57,39 +42,25 @@ RSS_FEEDS = [
     "https://www.theverge.com/rss/index.xml"
 ]
 
-# Google Gemini Client
+PROCESSED_FILE = "processed_urls.json"
+PENDING_NEWS = {}
+
 gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
-# ==================== YARDIMCI FONKSİYONLAR ====================
-
-def load_json_file(filename, default_val):
-    if os.path.exists(filename):
-        try:
-            with open(filename, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return default_val
-    return default_val
-
-def save_json_file(filename, data):
-    with open(filename, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-
 def load_processed_urls():
-    return set(load_json_file(PROCESSED_FILE, []))
+    if os.path.exists(PROCESSED_FILE):
+        try:
+            with open(PROCESSED_FILE, "r", encoding="utf-8") as f:
+                return set(json.load(f))
+        except Exception:
+            return set()
+    return set()
 
 def save_processed_url(url):
     urls = load_processed_urls()
     urls.add(url)
-    save_json_file(PROCESSED_FILE, list(urls))
-
-def load_pending_news():
-    return load_json_file(PENDING_FILE, {})
-
-def save_pending_news(data):
-    save_json_file(PENDING_FILE, data)
-
-# ==================== GEMINI AI İÇERİK ÜRETİMİ ====================
+    with open(PROCESSED_FILE, "w", encoding="utf-8") as f:
+        json.dump(list(urls), f, ensure_ascii=False, indent=2)
 
 def generate_ai_news(original_title, original_summary):
     prompt = f"""
@@ -111,22 +82,18 @@ Lütfen cevabını SADECE aşağıdaki JSON formatında ver (başka açıklama v
             contents=prompt
         )
         output_text = response.text.strip()
-        
         if output_text.startswith("```json"):
             output_text = output_text.replace("```json", "", 1)
         if output_text.endswith("```"):
             output_text = output_text[:-3]
-            
         return json.loads(output_text.strip())
     except Exception as e:
-        print(f"[UYARI] Gemini API hatası ({e}). Orijinal haber kullanılıyor.")
+        print(f"Gemini API hatası: {e}")
         return {
             "title": original_title,
-            "summary": original_summary[:150] + "..." if len(original_summary) > 150 else original_summary,
+            "summary": original_summary[:150] + "...",
             "content": original_summary
         }
-
-# ==================== GITHUB YAYINLAMA ====================
 
 def push_to_github(news_item):
     url = f"[https://api.github.com/repos/](https://api.github.com/repos/){GITHUB_REPO}/contents/{NEWS_FILE_PATH}"
@@ -149,7 +116,7 @@ def push_to_github(news_item):
             existing_news = []
     
     existing_news.insert(0, news_item)
-    existing_news = existing_news[:30] # En güncel 30 haber
+    existing_news = existing_news[:30]
     
     updated_content = json.dumps(existing_news, ensure_ascii=False, indent=2)
     b64_content = base64.b64encode(updated_content.encode("utf-8")).decode("utf-8")
@@ -164,8 +131,6 @@ def push_to_github(news_item):
         
     put_res = requests.put(url, headers=headers, json=payload)
     return put_res.status_code in [200, 201]
-
-# ==================== OTOMATİK RSS BOT İŞLEMLERİ ====================
 
 async def check_rss_and_notify(context: ContextTypes.DEFAULT_TYPE):
     processed = load_processed_urls()
@@ -188,7 +153,7 @@ async def check_rss_and_notify(context: ContextTypes.DEFAULT_TYPE):
                 elif "enclosures" in entry and len(entry.enclosures) > 0:
                     image_url = entry.enclosures[0].get("url", image_url)
                 
-                print(f"🚀 Yeni haber bulundu: {title}")
+                print(f"Yeni haber bulundu: {title}")
                 ai_news = generate_ai_news(title, summary)
                 
                 news_id = f"news_{int(time.time())}"
@@ -202,10 +167,7 @@ async def check_rss_and_notify(context: ContextTypes.DEFAULT_TYPE):
                     "date": datetime.now().strftime("%Y-%m-%d %H:%M")
                 }
                 
-                pending = load_pending_news()
-                pending[news_id] = news_data
-                save_pending_news(pending)
-                
+                PENDING_NEWS[news_id] = news_data
                 save_processed_url(link)
                 
                 keyboard = [
@@ -244,61 +206,44 @@ async def check_rss_and_notify(context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             print(f"RSS ayrıştırma hatası ({feed_url}): {e}")
 
-# ==================== MANUEL HABER EKLEME AKIŞI ====================
+# ==================== MANUEL HABER EKLEME (YENİ) ====================
 
-async def manual_add_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.effective_user.id)
-    
-    if user_id != str(TELEGRAM_CHAT_ID):
-        await update.message.reply_text("⛔ Bu botu kullanma yetkiniz yok!")
-        return ConversationHandler.END
+async def haberekle_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if str(update.effective_user.id) != str(TELEGRAM_CHAT_ID):
+        return
 
-    await update.message.reply_text(
-        "✍️ *Manuel Haber Ekleme Sihirbazı*\n\n"
-        "Lütfen haberin *BAŞLIĞINI* girin:\n"
-        "_(İptal etmek için /iptal yazabilirsiniz)_", 
-        parse_mode="Markdown"
-    )
-    return TITLE
+    # Komutun yanına metin yazılmış mı kontrol et
+    raw_text = update.message.text.replace("/haberekle", "").strip()
 
-async def manual_get_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data['title'] = update.message.text
-    await update.message.reply_text("📝 Harika! Şimdi haberin kısa *ÖZETİNİ* girin (1-2 cümle):", parse_mode="Markdown")
-    return SUMMARY
+    if not raw_text or "|" not in raw_text:
+        await update.message.reply_text(
+            "✍️ *Manuel Haber Ekleme*\n\n"
+            "Lütfen bilgileri aralarına **|** (dikey çizgi) koyarak tek mesajda gönderin:\n\n"
+            "`/haberekle Başlık | Özet | Detaylı İçerik`\n\n"
+            "*Örnek:*\n"
+            "`/haberekle Yeni Mobil İşlemci | Yerli çip üretildi | Detaylı haber metni buraya gelir.`",
+            parse_mode="Markdown"
+        )
+        return
 
-async def manual_get_summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data['summary'] = update.message.text
-    await update.message.reply_text("📄 Şimdi detaylı haber *İÇERİĞİNİ* (metnini) girin:", parse_mode="Markdown")
-    return CONTENT
-
-async def manual_get_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data['content'] = update.message.text
-    await update.message.reply_text("🖼️ Son adım! Haber *GÖRSELİNİ* gönderin (İster direkt resim yükleyin, ister resim URL adresi yapıştırın):", parse_mode="Markdown")
-    return IMAGE
-
-async def manual_get_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    parts = [p.strip() for p in raw_text.split("|")]
+    title = parts[0]
+    summary = parts[1] if len(parts) > 1 else title
+    content = parts[2] if len(parts) > 2 else summary
     image_url = "[https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80](https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80)"
-    
-    if update.message.photo:
-        file = await update.message.photo[-1].get_file()
-        image_url = file.file_path
-    elif update.message.text and update.message.text.startswith("http"):
-        image_url = update.message.text.strip()
 
     news_id = f"news_{int(time.time())}"
     news_data = {
         "id": news_id,
-        "title": context.user_data.get('title'),
-        "summary": context.user_data.get('summary'),
-        "content": context.user_data.get('content'),
+        "title": title,
+        "summary": summary,
+        "content": content,
         "source": "Özel Yazar",
         "image": image_url,
         "date": datetime.now().strftime("%Y-%m-%d %H:%M")
     }
 
-    pending = load_pending_news()
-    pending[news_id] = news_data
-    save_pending_news(pending)
+    PENDING_NEWS[news_id] = news_data
 
     keyboard = [
         [
@@ -309,33 +254,19 @@ async def manual_get_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     caption = (
-        f"📰 *MANUEL HABER ÖNİZLEMESİ*\n\n"
+        f"✍️ *MANUEL HABER ONAYI*\n\n"
         f"📌 *Başlık:* {news_data['title']}\n\n"
         f"📝 *Özet:* {news_data['summary']}\n\n"
-        f"🌐 *Kaynak:* {news_data['source']}"
+        f"📄 *İçerik:* {news_data['content'][:150]}..."
     )
 
-    try:
-        await update.message.reply_photo(
-            photo=image_url,
-            caption=caption,
-            parse_mode="Markdown",
-            reply_markup=reply_markup
-        )
-    except Exception:
-        await update.message.reply_text(
-            text=caption,
-            parse_mode="Markdown",
-            reply_markup=reply_markup
-        )
+    await update.message.reply_text(
+        text=caption,
+        parse_mode="Markdown",
+        reply_markup=reply_markup
+    )
 
-    return ConversationHandler.END
-
-async def manual_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("❌ Haber ekleme işlemi iptal edildi.")
-    return ConversationHandler.END
-
-# ==================== BUTON VE BOT HANDLERS ====================
+# ==================== BUTON HANDLER ====================
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -349,74 +280,53 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     action, news_id = data.split(":", 1)
     
-    pending = load_pending_news()
-    news_item = pending.get(news_id)
-    
     if action == "publish":
+        news_item = PENDING_NEWS.get(news_id)
         if news_item:
-            await query.edit_message_caption(caption=f"⏳ *{news_item['title']}*\n\nGitHub'a gönderiliyor...", parse_mode="Markdown")
+            await query.edit_message_caption(caption=f"⏳ *{news_item['title']}*\n\nSitede yayınlanıyor...", parse_mode="Markdown")
             success = push_to_github(news_item)
             if success:
                 await query.edit_message_caption(caption=f"✅ *YAYINLANDI!*\n\n*{news_item['title']}*\nSitenizde canlıya alındı.", parse_mode="Markdown")
             else:
                 await query.edit_message_caption(caption=f"⚠️ *Yayınlama Hatası:* GitHub'a gönderilemedi.", parse_mode="Markdown")
-            
-            del pending[news_id]
-            save_pending_news(pending)
+            del PENDING_NEWS[news_id]
         else:
-            await query.edit_message_caption(caption="⚠️ Haber süresi doldu veya bulunamadı.")
+            await query.edit_message_text(text="⚠️ Haber bulunamadı veya süresi doldu.")
             
     elif action == "reject":
+        news_item = PENDING_NEWS.get(news_id)
         title = news_item['title'] if news_item else "Haber"
-        if news_id in pending:
-            del pending[news_id]
-            save_pending_news(pending)
-        await query.edit_message_caption(caption=f"❌ *REDDEDİLDİ:* {title}", parse_mode="Markdown")
+        if news_id in PENDING_NEWS:
+            del PENDING_NEWS[news_id]
+        await query.edit_message_text(text=f"❌ *REDDEDİLDİ:* {title}", parse_mode="Markdown")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if str(update.effective_user.id) != str(TELEGRAM_CHAT_ID):
-        await update.message.reply_text("⛔ Üzgünüm, bu bot kişiye özeldir.")
+        await update.message.reply_text("⛔ Üzgünüm, bu bot kişiye özeldir. Erişim yetkiniz bulunmamaktadır.")
         return
     await update.message.reply_text(
-        "👋 *Haber Botu Aktif!*\n\n"
-        "• Otomatik haberler 1 saatte bir taranır.\n"
-        "• Kendiniz manuel haber eklemek isterseniz **/haberekle** komutunu yazabilirsiniz.",
+        "👋 Haber Onay Botu Aktif!\n\n"
+        "• Otomatik haberler RSS ile düşer.\n"
+        "• Manuel haber eklemek için:\n`/haberekle Başlık | Özet | İçerik`",
         parse_mode="Markdown"
     )
 
 import httpx
+
 _old_async_init = httpx.AsyncClient.__init__
 def _new_async_init(self, *args, **kwargs):
     kwargs['verify'] = False
     _old_async_init(self, *args, **kwargs)
 httpx.AsyncClient.__init__ = _new_async_init
 
-
-# ==================== MAIN ====================
-
 def main():
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
-    # Manuel Haber Ekleme Akışı (ConversationHandler)
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("haberekle", manual_add_start)],
-        states={
-            TITLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, manual_get_title)],
-            SUMMARY: [MessageHandler(filters.TEXT & ~filters.COMMAND, manual_get_summary)],
-            CONTENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, manual_get_content)],
-            IMAGE: [
-                MessageHandler(filters.PHOTO, manual_get_image),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, manual_get_image)
-            ],
-        },
-        fallbacks=[CommandHandler("iptal", manual_cancel)],
-    )
-
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(conv_handler)
+    app.add_handler(CommandHandler("haberekle", haberekle_command))
     app.add_handler(CallbackQueryHandler(button_handler))
     
-    # SAATLİK KONTROL (1 Saat = 3600 Saniye)
+    # 3600 saniye = 1 Saat
     job_queue = app.job_queue
     job_queue.run_repeating(check_rss_and_notify, interval=3600, first=5)
     
