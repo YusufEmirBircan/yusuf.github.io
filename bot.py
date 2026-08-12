@@ -307,47 +307,47 @@ async def start_edit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await context.bot.send_message(
         chat_id=TELEGRAM_CHAT_ID,
-        text=f"✏️ *Haber Düzenleme Modu*\n\nMevcut Başlık: {news_item['title']}\n\nLütfen yeni başlığı yazın (Değiştirmemek için /gec yazın):",
+        text=f"✏️ *Haber Düzenleme Modu*\n\nMevcut Başlık: {news_item['title']}\n\nLütfen yeni başlığı yazın (Değiştirmemek için sadece `gec` yazın):",
         parse_mode="Markdown"
     )
     return EDIT_TITLE
 
 async def edit_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
-    if text.lower() != '/gec':
+    if text.lower() != 'gec':
         context.user_data['edit_news']['title'] = text
     
     await update.message.reply_text(
-        f"Mevcut Özet: {context.user_data['edit_news']['summary']}\n\nLütfen yeni özeti yazın (Değiştirmemek için /gec yazın):",
+        f"Mevcut Özet: {context.user_data['edit_news']['summary']}\n\nLütfen yeni özeti yazın (Değiştirmemek için sadece `gec` yazın):",
         parse_mode="Markdown"
     )
     return EDIT_SUMMARY
 
 async def edit_summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
-    if text.lower() != '/gec':
+    if text.lower() != 'gec':
         context.user_data['edit_news']['summary'] = text
     
     await update.message.reply_text(
-        f"Lütfen yeni içeriği yazın (Değiştirmemek için /gec yazın):",
+        f"Lütfen yeni içeriği yazın (Değiştirmemek için sadece `gec` yazın):",
         parse_mode="Markdown"
     )
     return EDIT_CONTENT
 
 async def edit_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
-    if text.lower() != '/gec':
+    if text.lower() != 'gec':
         context.user_data['edit_news']['content'] = text
     
     await update.message.reply_text(
-        f"Lütfen yeni görsel linkini yazın (Değiştirmemek için /gec yazın):",
+        f"Lütfen yeni görsel linkini yazın (Değiştirmemek için sadece `gec` yazın):",
         parse_mode="Markdown"
     )
     return EDIT_IMAGE
 
 async def edit_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
-    if text.lower() != '/gec':
+    if text.lower() != 'gec':
         context.user_data['edit_news']['image'] = text
         
     news_item = context.user_data['edit_news']
@@ -380,12 +380,12 @@ async def ask_summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def ask_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['manual_news']['content'] = update.message.text
-    await update.message.reply_text("Son olarak, haber için bir **görsel linki** gönderin.\nEğer görsel eklemek istemiyorsanız sadece /gec yazabilirsiniz.", parse_mode="Markdown")
+    await update.message.reply_text("Son olarak, haber için bir **görsel linki** gönderin.\nEğer görsel eklemek istemiyorsanız sadece `gec` yazabilirsiniz.", parse_mode="Markdown")
     return IMAGE
 
 async def ask_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
-    if text and text.lower() == '/gec':
+    if text and text.lower() == 'gec':
         image_url = "https://images.unsplash.com/photo-1585829365295-ab7cd400c167?auto=format&fit=crop&w=800&q=80"
     else:
         image_url = text
