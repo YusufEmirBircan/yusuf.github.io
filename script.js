@@ -226,10 +226,13 @@ document.addEventListener('DOMContentLoaded', () => {
     fetchNews();
 });
 
+window.allNewsList = [];
+
 function fetchNews() {
     fetch('news.json')
         .then(response => response.json())
         .then(data => {
+            window.allNewsList = data;
             renderNews(data);
         })
         .catch(err => {
@@ -260,7 +263,7 @@ function renderNews(newsList) {
         <div class="news-card" onclick="openNewsModal('${escapeHTML(item.id)}')">
             <img src="${escapeHTML(item.image) || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80'}" alt="${escapeHTML(item.title)}" class="news-image">
             <div class="news-body">
-                <span class="news-date">${escapeHTML(item.date) || ''} • ${escapeHTML(item.source) || 'Teknoloji'}</span>
+                <span class="news-date">${escapeHTML(item.category || 'Diğer')} • ${escapeHTML(item.date) || ''}</span>
                 <h3 class="news-title">${escapeHTML(item.title)}</h3>
                 <p class="news-summary">${escapeHTML(item.summary)}</p>
                 <span class="news-read-more">Devamını Oku ↗</span>
@@ -283,6 +286,25 @@ function openNewsModal(newsId) {
     const modal = document.getElementById('newsModal');
     modal.style.display = 'flex';
 }
+
+document.addEventListener('DOMContentLoaded', () => {
+    const filterBtns = document.querySelectorAll('.cat-btn');
+    filterBtns.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            filterBtns.forEach(b => b.classList.remove('active'));
+            e.target.classList.add('active');
+            
+            const selectedCategory = e.target.getAttribute('data-cat');
+            
+            if (selectedCategory === 'Tümü') {
+                renderNews(window.allNewsList);
+            } else {
+                const filtered = window.allNewsList.filter(news => news.category === selectedCategory);
+                renderNews(filtered);
+            }
+        });
+    });
+});
 
 document.addEventListener('click', (e) => {
     const modal = document.getElementById('newsModal');

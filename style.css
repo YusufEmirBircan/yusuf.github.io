@@ -236,6 +236,34 @@ body {
     margin: 0 auto;
 }
 
+/* Kategori Filtreleri */
+.category-filters {
+    display: flex;
+    gap: 12px;
+    margin-top: 25px;
+    flex-wrap: wrap;
+}
+
+.cat-btn {
+    background: transparent;
+    border: 2px solid #111;
+    color: #111;
+    padding: 10px 24px;
+    border-radius: 30px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.cat-btn:hover,
+.cat-btn.active {
+    background: #111;
+    color: #fff;
+}
+
 .news-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));

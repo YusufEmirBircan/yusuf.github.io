@@ -49,8 +49,8 @@ RSS_FEEDS = [
 PROCESSED_FILE = "processed_urls.json"
 PENDING_NEWS = {}
 
-TITLE, SUMMARY, CONTENT, SOURCE, IMAGE = range(5)
-EDIT_TITLE, EDIT_SUMMARY, EDIT_CONTENT, EDIT_IMAGE = range(5, 9)
+TITLE, SUMMARY, CONTENT, SOURCE, CATEGORY, IMAGE = range(6)
+EDIT_TITLE, EDIT_SUMMARY, EDIT_CONTENT, EDIT_IMAGE = range(6, 10)
 
 gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
@@ -92,6 +92,7 @@ def save_processed_url(url):
 def generate_ai_news(original_title, original_summary):
     prompt = f"""
 Sana bir teknoloji haberi başlığı ve özeti vereceğim. Bu haberi tamamen özgün, Türkçe, ilgi çekici ve SEO uyumlu bir haber makalesine dönüştür.
+Ayrıca bu haberin kategorisini şu üç seçenekten birine ayır: "Dünya", "Teknoloji", "Son dakika".
 
 Orijinal Başlık: {original_title}
 Orijinal İçerik/Özet: {original_summary}
@@ -100,7 +101,8 @@ Lütfen cevabını SADECE aşağıdaki JSON formatında ver (başka açıklama v
 {{
   "title": "SEO Uyumlu Özgün Türkçe Başlık",
   "summary": "1-2 cümlelik ilgi çekici Türkçe haber özeti",
-  "content": "Detaylı, anlaşılır ve özgün Türkçe haber içeriği (2-3 paragraf)"
+  "content": "Detaylı, anlaşılır ve özgün Türkçe haber içeriği (2-3 paragraf)",
+  "category": "Dünya, Teknoloji veya Son dakika"
 }}
 """
     try:
@@ -208,9 +210,10 @@ async def check_rss_and_notify(context: ContextTypes.DEFAULT_TYPE):
                 news_id = f"news_{int(time.time())}"
                 news_data = {
                     "id": news_id,
-                    "title": ai_news["title"],
-                    "summary": ai_news["summary"],
-                    "content": ai_news["content"],
+                    "title": ai_news.get("title", title),
+                    "summary": ai_news.get("summary", summary),
+                    "content": ai_news.get("content", summary),
+                    "category": ai_news.get("category", "Teknoloji"),
                     "source": feed.feed.get("title", "Teknoloji"),
                     "image": image_url,
                     "date": datetime.now(TR_TZ).strftime("%Y-%m-%d %H:%M")
@@ -409,7 +412,26 @@ async def ask_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def ask_source(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['manual_news']['source'] = update.message.text
-    await update.message.reply_text("Son olarak, haber için bir **görsel** gönderin.\n(Galeriden bir fotoğraf yükleyebilir veya resim linki yapıştırabilirsiniz. İstemiyorsanız `gec` yazın)", parse_mode="Markdown")
+    
+    keyboard = [
+        [
+            InlineKeyboardButton("🌍 Dünya", callback_data="cat:Dünya"),
+            InlineKeyboardButton("💻 Teknoloji", callback_data="cat:Teknoloji"),
+            InlineKeyboardButton("🚨 Son dakika", callback_data="cat:Son dakika")
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("Lütfen haberin **KATEGORİSİNİ** seçin:", parse_mode="Markdown", reply_markup=reply_markup)
+    return CATEGORY
+
+async def ask_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    _, category = query.data.split(":", 1)
+    context.user_data['manual_news']['category'] = category
+    
+    await query.edit_message_text(f"Seçilen Kategori: **{category}**\n\nSon olarak, haber için bir **görsel** gönderin.\n(Galeriden bir fotoğraf yükleyebilir veya resim linki yapıştırabilirsiniz. İstemiyorsanız `gec` yazın)", parse_mode="Markdown")
     return IMAGE
 
 async def ask_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -453,6 +475,7 @@ async def ask_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "title": context.user_data['manual_news']['title'],
         "summary": context.user_data['manual_news']['summary'],
         "content": context.user_data['manual_news']['content'],
+        "category": context.user_data['manual_news'].get('category', 'Teknoloji'),
         "source": context.user_data['manual_news']['source'],
         "image": image_url,
         "date": datetime.now(TR_TZ).strftime("%Y-%m-%d %H:%M")
@@ -648,6 +671,7 @@ def main():
             SUMMARY: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_summary)],
             CONTENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_content)],
             SOURCE: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_source)],
+            CATEGORY: [CallbackQueryHandler(ask_category, pattern="^cat:")],
             IMAGE: [MessageHandler((filters.PHOTO | filters.TEXT) & ~filters.COMMAND, ask_image)],
         },
         fallbacks=[CommandHandler("iptal", cancel_news)]
