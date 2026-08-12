@@ -15,7 +15,6 @@ ssl._create_default_https_context = ssl._create_unverified_context
 
 # ==================== CONFIGURATION ====================
 
-# Güvenlik nedeniyle token'ları çevre değişkenlerinden veya lokal config'den okuyoruz
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
@@ -23,8 +22,10 @@ GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 
 GITHUB_REPO = "YusufEmirBircan/yusufEmirBircan.github.io"
 NEWS_FILE_PATH = "news.json"
+PROCESSED_FILE = "processed_urls.json"
+PENDING_FILE = "pending_news.json"
 
-# Local secret override if exists
+# Local secret override
 if os.path.exists("config.json"):
     try:
         with open("config.json", "r", encoding="utf-8") as f:
@@ -36,7 +37,7 @@ if os.path.exists("config.json"):
     except Exception:
         pass
 
-# RSS Kaynakları (Teknoloji & Gündem)
+# RSS Kaynakları
 RSS_FEEDS = [
     "https://webtekno.com/rss.xml",
     "https://shiftdelete.net/feed",
@@ -45,26 +46,39 @@ RSS_FEEDS = [
     "https://www.theverge.com/rss/index.xml"
 ]
 
-PROCESSED_FILE = "processed_urls.json"
-PENDING_NEWS = {}
-
-# Google Gemini Client
+# Google Gemini Client (Yeni API)
 gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
-def load_processed_urls():
-    if os.path.exists(PROCESSED_FILE):
+# ==================== YARDIMCI FONKSİYONLAR ====================
+
+def load_json_file(filename, default_val):
+    if os.path.exists(filename):
         try:
-            with open(PROCESSED_FILE, "r", encoding="utf-8") as f:
-                return set(json.load(f))
+            with open(filename, "r", encoding="utf-8") as f:
+                return json.load(f)
         except Exception:
-            return set()
-    return set()
+            return default_val
+    return default_val
+
+def save_json_file(filename, data):
+    with open(filename, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+def load_processed_urls():
+    return set(load_json_file(PROCESSED_FILE, []))
 
 def save_processed_url(url):
     urls = load_processed_urls()
     urls.add(url)
-    with open(PROCESSED_FILE, "w", encoding="utf-8") as f:
-        json.dump(list(urls), f, ensure_ascii=False, indent=2)
+    save_json_file(PROCESSED_FILE, list(urls))
+
+def load_pending_news():
+    return load_json_file(PENDING_FILE, {})
+
+def save_pending_news(data):
+    save_json_file(PENDING_FILE, data)
+
+# ==================== GEMINI AI İÇERİK ÜRETİMİ ====================
 
 def generate_ai_news(original_title, original_summary):
     prompt = f"""
@@ -81,32 +95,36 @@ Lütfen cevabını SADECE aşağıdaki JSON formatında ver (başka açıklama v
 }}
 """
     try:
-        response = gemini_client.interactions.create(
-            model="gemini-3.6-flash",
-            input=prompt
+        # KOTA DOSTU VE ÜCRETSİZ MODEL: gemini-2.5-flash-lite
+        response = gemini_client.models.generate_content(
+            model="gemini-1.5-flash",
+            contents=prompt
         )
-        output_text = response.output_text.strip()
+        output_text = response.text.strip()
+        
         if output_text.startswith("```json"):
             output_text = output_text.replace("```json", "", 1)
         if output_text.endswith("```"):
             output_text = output_text[:-3]
+            
         return json.loads(output_text.strip())
     except Exception as e:
-        print(f"Gemini API hatası: {e}")
+        print(f"[UYARI] Gemini API hatası ({e}). Orijinal haber kullanılıyor.")
         return {
             "title": original_title,
-            "summary": original_summary[:150] + "...",
+            "summary": original_summary[:150] + "..." if len(original_summary) > 150 else original_summary,
             "content": original_summary
         }
 
+# ==================== GITHUB YAYINLAMA ====================
+
 def push_to_github(news_item):
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{NEWS_FILE_PATH}"
+    url = f"[https://api.github.com/repos/](https://api.github.com/repos/){GITHUB_REPO}/contents/{NEWS_FILE_PATH}"
     headers = {
         "Authorization": f"token {GITHUB_TOKEN}",
         "Accept": "application/vnd.github.v3+json"
     }
     
-    # Mevcut news.json dosyasını çek
     res = requests.get(url, headers=headers)
     sha = None
     existing_news = []
@@ -120,11 +138,8 @@ def push_to_github(news_item):
         except Exception:
             existing_news = []
     
-    # Yeni haberi başa ekle
     existing_news.insert(0, news_item)
-    
-    # En güncel 30 haberi tut
-    existing_news = existing_news[:30]
+    existing_news = existing_news[:30] # En güncel 30 haber
     
     updated_content = json.dumps(existing_news, ensure_ascii=False, indent=2)
     b64_content = base64.b64encode(updated_content.encode("utf-8")).decode("utf-8")
@@ -139,6 +154,8 @@ def push_to_github(news_item):
         
     put_res = requests.put(url, headers=headers, json=payload)
     return put_res.status_code in [200, 201]
+
+# ==================== BOT İŞLEMLERİ ====================
 
 async def check_rss_and_notify(context: ContextTypes.DEFAULT_TYPE):
     processed = load_processed_urls()
@@ -155,15 +172,13 @@ async def check_rss_and_notify(context: ContextTypes.DEFAULT_TYPE):
                 title = entry.get("title", "Başlıksız")
                 summary = entry.get("summary", entry.get("description", ""))
                 
-                # Görsel bulma
-                image_url = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80"
+                image_url = "[https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80](https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80)"
                 if "media_content" in entry and len(entry.media_content) > 0:
                     image_url = entry.media_content[0].get("url", image_url)
                 elif "enclosures" in entry and len(entry.enclosures) > 0:
                     image_url = entry.enclosures[0].get("url", image_url)
                 
-                # AI ile haberi düzenle
-                print(f"Yeni haber bulundu: {title}")
+                print(f"🚀 Yeni haber bulundu: {title}")
                 ai_news = generate_ai_news(title, summary)
                 
                 news_id = f"news_{int(time.time())}"
@@ -177,14 +192,17 @@ async def check_rss_and_notify(context: ContextTypes.DEFAULT_TYPE):
                     "date": datetime.now().strftime("%Y-%m-%d %H:%M")
                 }
                 
-                PENDING_NEWS[news_id] = news_data
+                # Bekleyen haberleri kalıcı dosyaya kaydet
+                pending = load_pending_news()
+                pending[news_id] = news_data
+                save_pending_news(pending)
+                
                 save_processed_url(link)
                 
-                # Telegram mesajı gönder
                 keyboard = [
                     [
-                        InlineKeyboardButton("✅ Yayınla", callback_query_data=f"publish:{news_id}"),
-                        InlineKeyboardButton("❌ Reddet", callback_query_data=f"reject:{news_id}")
+                        InlineKeyboardButton("✅ Yayınla", callback_data=f"publish:{news_id}"),
+                        InlineKeyboardButton("❌ Reddet", callback_data=f"reject:{news_id}")
                     ]
                 ]
                 reply_markup = InlineKeyboardMarkup(keyboard)
@@ -212,7 +230,7 @@ async def check_rss_and_notify(context: ContextTypes.DEFAULT_TYPE):
                         reply_markup=reply_markup
                     )
                 
-                # Her çalışmada en fazla 1 yeni haber işleyelim
+                # Her döngüde tek haber işleyip API/Kotayı koru
                 return
                 
         except Exception as e:
@@ -221,7 +239,6 @@ async def check_rss_and_notify(context: ContextTypes.DEFAULT_TYPE):
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     
-    # Güvenlik Kontrolü: Sadece SİZİN Telegram ID'niz işlem yapabilir
     if str(query.from_user.id) != str(TELEGRAM_CHAT_ID):
         await query.answer("⛔ Bu botu kullanma yetkiniz yok!", show_alert=True)
         return
@@ -231,35 +248,38 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     action, news_id = data.split(":", 1)
     
+    pending = load_pending_news()
+    news_item = pending.get(news_id)
+    
     if action == "publish":
-        news_item = PENDING_NEWS.get(news_id)
         if news_item:
-            await query.edit_message_caption(caption=f"⏳ *{news_item['title']}*\n\nSitede yayınlanıyor...", parse_mode="Markdown")
+            await query.edit_message_caption(caption=f"⏳ *{news_item['title']}*\n\nGitHub'a gönderiliyor...", parse_mode="Markdown")
             success = push_to_github(news_item)
             if success:
                 await query.edit_message_caption(caption=f"✅ *YAYINLANDI!*\n\n*{news_item['title']}*\nSitenizde canlıya alındı.", parse_mode="Markdown")
             else:
                 await query.edit_message_caption(caption=f"⚠️ *Yayınlama Hatası:* GitHub'a gönderilemedi.", parse_mode="Markdown")
-            del PENDING_NEWS[news_id]
+            
+            del pending[news_id]
+            save_pending_news(pending)
         else:
             await query.edit_message_caption(caption="⚠️ Haber süresi doldu veya bulunamadı.")
             
     elif action == "reject":
-        news_item = PENDING_NEWS.get(news_id)
         title = news_item['title'] if news_item else "Haber"
-        if news_id in PENDING_NEWS:
-            del PENDING_NEWS[news_id]
+        if news_id in pending:
+            del pending[news_id]
+            save_pending_news(pending)
         await query.edit_message_caption(caption=f"❌ *REDDEDİLDİ:* {title}", parse_mode="Markdown")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if str(update.effective_user.id) != str(TELEGRAM_CHAT_ID):
-        await update.message.reply_text("⛔ Üzgünüm, bu bot kişiye özeldir. Erişim yetkiniz bulunmamaktadır.")
+        await update.message.reply_text("⛔ Üzgünüm, bu bot kişiye özeldir.")
         return
     await update.message.reply_text("👋 Haber Onay Botu Aktif! Yeni haberler düştüğünde onayınıza sunulacak.")
 
-
+# SSL bypass (gerekirse)
 import httpx
-
 _old_async_init = httpx.AsyncClient.__init__
 def _new_async_init(self, *args, **kwargs):
     kwargs['verify'] = False
@@ -269,20 +289,14 @@ httpx.AsyncClient.__init__ = _new_async_init
 def main():
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
-
-    
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler))
     
-    # Her 60 saniyede bir RSS kontrolü yap
     job_queue = app.job_queue
-    job_queue.run_repeating(check_rss_and_notify, interval=60, first=5)
+    job_queue.run_repeating(check_rss_and_notify, interval=180, first=5) # 3 dakikada bir kontrol
     
     print("[INFO] Haber Botu baslatildi... Dinleniyor...")
     app.run_polling()
 
-
-
 if __name__ == "__main__":
     main()
-
