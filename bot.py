@@ -8,7 +8,7 @@ import ssl
 from datetime import datetime
 from google import genai
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters, ConversationHandler
 
 ssl._create_default_https_context = ssl._create_unverified_context
 
@@ -47,6 +47,8 @@ RSS_FEEDS = [
 
 PROCESSED_FILE = "processed_urls.json"
 PENDING_NEWS = {}
+
+TITLE, SUMMARY, CONTENT, IMAGE = range(4)
 
 # Google Gemini Client
 gemini_client = genai.Client(api_key=GEMINI_API_KEY)
@@ -343,6 +345,87 @@ async def handle_manual_message(update: Update, context: ContextTypes.DEFAULT_TY
             reply_markup=reply_markup
         )
 
+async def add_news_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if str(update.effective_user.id) != str(TELEGRAM_CHAT_ID):
+        return ConversationHandler.END
+    context.user_data['manual_news'] = {}
+    await update.message.reply_text("Yeni haber ekleme işlemine başladık.\n\nLütfen haberin **BAŞLIĞINI** yazın (İptal için /iptal yazın):", parse_mode="Markdown")
+    return TITLE
+
+async def ask_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data['manual_news']['title'] = update.message.text
+    await update.message.reply_text("Harika. Şimdi lütfen haberin **ÖZETİNİ** yazın:", parse_mode="Markdown")
+    return SUMMARY
+
+async def ask_summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data['manual_news']['summary'] = update.message.text
+    await update.message.reply_text("Güzel. Şimdi lütfen haberin **İÇERİĞİNİ** yazın:", parse_mode="Markdown")
+    return CONTENT
+
+async def ask_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data['manual_news']['content'] = update.message.text
+    await update.message.reply_text("Son olarak, haber için bir **görsel linki** gönderin.\nEğer görsel eklemek istemiyorsanız sadece /gec yazabilirsiniz.", parse_mode="Markdown")
+    return IMAGE
+
+async def ask_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    if text and text.lower() == '/gec':
+        image_url = "https://images.unsplash.com/photo-1585829365295-ab7cd400c167?auto=format&fit=crop&w=800&q=80"
+    else:
+        image_url = text
+
+    context.user_data['manual_news']['image'] = image_url
+    
+    news_id = f"news_manual_{int(time.time())}"
+    news_data = {
+        "id": news_id,
+        "title": context.user_data['manual_news']['title'],
+        "summary": context.user_data['manual_news']['summary'],
+        "content": context.user_data['manual_news']['content'],
+        "source": "Özel İçerik",
+        "image": image_url,
+        "date": datetime.now().strftime("%Y-%m-%d %H:%M")
+    }
+    
+    PENDING_NEWS[news_id] = news_data
+    
+    keyboard = [
+        [
+            InlineKeyboardButton("✅ Yayınla", callback_data=f"publish:{news_id}"),
+            InlineKeyboardButton("❌ Reddet", callback_data=f"reject:{news_id}")
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    caption = (
+        f"📰 *YENİ MANUEL HABER ONAYI*\n\n"
+        f"📌 *Başlık:* {news_data['title']}\n\n"
+        f"📝 *Özet:* {news_data['summary']}\n\n"
+        f"🌐 *Kaynak:* {news_data['source']}"
+    )
+    
+    try:
+        await context.bot.send_photo(
+            chat_id=TELEGRAM_CHAT_ID,
+            photo=news_data["image"],
+            caption=caption,
+            parse_mode="Markdown",
+            reply_markup=reply_markup
+        )
+    except Exception:
+        await context.bot.send_message(
+            chat_id=TELEGRAM_CHAT_ID,
+            text=caption,
+            parse_mode="Markdown",
+            reply_markup=reply_markup
+        )
+        
+    return ConversationHandler.END
+
+async def cancel_news(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Haber ekleme işlemi iptal edildi.")
+    return ConversationHandler.END
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if str(update.effective_user.id) != str(TELEGRAM_CHAT_ID):
         await update.message.reply_text("⛔ Üzgünüm, bu bot kişiye özeldir. Erişim yetkiniz bulunmamaktadır.")
@@ -365,6 +448,19 @@ def main():
     
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler))
+    
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("haberekle", add_news_start)],
+        states={
+            TITLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_title)],
+            SUMMARY: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_summary)],
+            CONTENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_content)],
+            IMAGE: [MessageHandler(filters.TEXT, ask_image)],
+        },
+        fallbacks=[CommandHandler("iptal", cancel_news)]
+    )
+    app.add_handler(conv_handler)
+    
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_manual_message))
     
     # Her 1 saatte (3600 saniye) bir RSS kontrolü yap
