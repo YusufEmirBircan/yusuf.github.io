@@ -237,6 +237,16 @@ function fetchNews() {
         });
 }
 
+function escapeHTML(str) {
+    if (!str) return '';
+    return str.toString()
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
 function renderNews(newsList) {
     const grid = document.getElementById('newsGrid');
     if (!grid) return;
@@ -247,12 +257,12 @@ function renderNews(newsList) {
     }
 
     grid.innerHTML = newsList.map(item => `
-        <div class="news-card" onclick="openNewsModal('${item.id}')">
-            <img src="${item.image || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80'}" alt="${item.title}" class="news-image">
+        <div class="news-card" onclick="openNewsModal('${escapeHTML(item.id)}')">
+            <img src="${escapeHTML(item.image) || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80'}" alt="${escapeHTML(item.title)}" class="news-image">
             <div class="news-body">
-                <span class="news-date">${item.date || ''} • ${item.source || 'Teknoloji'}</span>
-                <h3 class="news-title">${item.title}</h3>
-                <p class="news-summary">${item.summary}</p>
+                <span class="news-date">${escapeHTML(item.date) || ''} • ${escapeHTML(item.source) || 'Teknoloji'}</span>
+                <h3 class="news-title">${escapeHTML(item.title)}</h3>
+                <p class="news-summary">${escapeHTML(item.summary)}</p>
                 <span class="news-read-more">Devamını Oku ↗</span>
             </div>
         </div>

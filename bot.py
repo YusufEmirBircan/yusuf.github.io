@@ -5,12 +5,13 @@ import requests
 import feedparser
 import base64
 import ssl
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+TR_TZ = timezone(timedelta(hours=3))
 from google import genai
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, BotCommand
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters, ConversationHandler
 
-ssl._create_default_https_context = ssl._create_unverified_context
+import ssl
 
 
 # ==================== CONFIGURATION ====================
@@ -22,6 +23,8 @@ GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 
 GITHUB_REPO = "YusufEmirBircan/yusufEmirBircan.github.io"
 NEWS_FILE_PATH = "news.json"
+AUTH_FILE = "authorized_users.json"
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "123456")
 
 if os.path.exists("config.json"):
     try:
@@ -31,6 +34,7 @@ if os.path.exists("config.json"):
             TELEGRAM_CHAT_ID = cfg.get("TELEGRAM_CHAT_ID", TELEGRAM_CHAT_ID)
             GEMINI_API_KEY = cfg.get("GEMINI_API_KEY", GEMINI_API_KEY)
             GITHUB_TOKEN = cfg.get("GITHUB_TOKEN", GITHUB_TOKEN)
+            ADMIN_PASSWORD = cfg.get("ADMIN_PASSWORD", ADMIN_PASSWORD)
     except Exception:
         pass
 
@@ -45,8 +49,8 @@ RSS_FEEDS = [
 PROCESSED_FILE = "processed_urls.json"
 PENDING_NEWS = {}
 
-TITLE, SUMMARY, CONTENT, IMAGE = range(4)
-EDIT_TITLE, EDIT_SUMMARY, EDIT_CONTENT, EDIT_IMAGE = range(4, 8)
+TITLE, SUMMARY, CONTENT, SOURCE, IMAGE = range(5)
+EDIT_TITLE, EDIT_SUMMARY, EDIT_CONTENT, EDIT_IMAGE = range(5, 9)
 
 gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
@@ -58,6 +62,26 @@ def load_processed_urls():
         except Exception:
             return set()
     return set()
+
+def load_auth_users():
+    if os.path.exists(AUTH_FILE):
+        try:
+            with open(AUTH_FILE, "r", encoding="utf-8") as f:
+                return set(json.load(f))
+        except Exception:
+            return set()
+    return set()
+
+def save_auth_user(user_id):
+    users = load_auth_users()
+    users.add(str(user_id))
+    with open(AUTH_FILE, "w", encoding="utf-8") as f:
+        json.dump(list(users), f)
+
+def is_authorized(user_id):
+    if str(user_id) == str(TELEGRAM_CHAT_ID):
+        return True
+    return str(user_id) in load_auth_users()
 
 def save_processed_url(url):
     urls = load_processed_urls()
@@ -104,7 +128,7 @@ def fetch_news_from_github():
         "Authorization": f"token {GITHUB_TOKEN}",
         "Accept": "application/vnd.github.v3+json"
     }
-    res = requests.get(url, headers=headers, verify=False)
+    res = requests.get(url, headers=headers)
     if res.status_code == 200:
         data = res.json()
         sha = data.get("sha")
@@ -132,7 +156,7 @@ def push_news_list_to_github(news_list, sha, commit_msg):
     }
     if sha:
         payload["sha"] = sha
-    put_res = requests.put(url, headers=headers, json=payload, verify=False)
+    put_res = requests.put(url, headers=headers, json=payload)
     return put_res.status_code in [200, 201]
 
 def push_to_github(news_item):
@@ -159,7 +183,7 @@ def update_news_by_id(news_item):
 
 async def check_rss_and_notify(context: ContextTypes.DEFAULT_TYPE):
     processed = load_processed_urls()
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] RSS Kaynakları taranıyor...")
+    print(f"[{datetime.now(TR_TZ).strftime('%H:%M:%S')}] RSS Kaynakları taranıyor...")
     
     for feed_url in RSS_FEEDS:
         try:
@@ -189,7 +213,7 @@ async def check_rss_and_notify(context: ContextTypes.DEFAULT_TYPE):
                     "content": ai_news["content"],
                     "source": feed.feed.get("title", "Teknoloji"),
                     "image": image_url,
-                    "date": datetime.now().strftime("%Y-%m-%d %H:%M")
+                    "date": datetime.now(TR_TZ).strftime("%Y-%m-%d %H:%M")
                 }
                 
                 PENDING_NEWS[news_id] = news_data
@@ -232,7 +256,7 @@ async def check_rss_and_notify(context: ContextTypes.DEFAULT_TYPE):
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     
-    if str(query.from_user.id) != str(TELEGRAM_CHAT_ID):
+    if not is_authorized(query.from_user.id):
         await query.answer("⛔ Bu botu kullanma yetkiniz yok!", show_alert=True)
         return
         
@@ -270,7 +294,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(text=f"⚠️ Silme işlemi başarısız veya haber bulunamadı.")
 
 async def list_news(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if str(update.effective_user.id) != str(TELEGRAM_CHAT_ID): return
+    if not is_authorized(update.effective_user.id): return
     await update.message.reply_text("⏳ Sitenizdeki haberler getiriliyor...")
     news_list, _ = fetch_news_from_github()
     if not news_list:
@@ -290,7 +314,7 @@ async def list_news(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def start_edit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    if str(query.from_user.id) != str(TELEGRAM_CHAT_ID):
+    if not is_authorized(query.from_user.id):
         await query.answer("⛔ Yetkiniz yok!", show_alert=True)
         return ConversationHandler.END
     await query.answer()
@@ -362,7 +386,7 @@ async def edit_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 async def add_news_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if str(update.effective_user.id) != str(TELEGRAM_CHAT_ID):
+    if not is_authorized(update.effective_user.id):
         return ConversationHandler.END
     context.user_data['manual_news'] = {}
     await update.message.reply_text("Yeni haber ekleme işlemine başladık.\n\nLütfen haberin **BAŞLIĞINI** yazın (İptal için /iptal yazın):", parse_mode="Markdown")
@@ -380,15 +404,46 @@ async def ask_summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def ask_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['manual_news']['content'] = update.message.text
-    await update.message.reply_text("Son olarak, haber için bir **görsel linki** gönderin.\nEğer görsel eklemek istemiyorsanız sadece `gec` yazabilirsiniz.", parse_mode="Markdown")
+    await update.message.reply_text("Şimdi lütfen haberin **KAYNAĞINI** yazın (Örn: Özel İçerik, Webtekno):", parse_mode="Markdown")
+    return SOURCE
+
+async def ask_source(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data['manual_news']['source'] = update.message.text
+    await update.message.reply_text("Son olarak, haber için bir **görsel** gönderin.\n(Galeriden bir fotoğraf yükleyebilir veya resim linki yapıştırabilirsiniz. İstemiyorsanız `gec` yazın)", parse_mode="Markdown")
     return IMAGE
 
 async def ask_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
-    if text and text.lower() == 'gec':
-        image_url = "https://images.unsplash.com/photo-1585829365295-ab7cd400c167?auto=format&fit=crop&w=800&q=80"
+    if update.message.photo:
+        await update.message.reply_text("⏳ Fotoğraf GitHub'a yükleniyor, lütfen bekleyin...")
+        photo_file = await update.message.photo[-1].get_file()
+        image_bytes = await photo_file.download_as_bytearray()
+        
+        filename = f"img_{int(time.time())}.jpg"
+        b64_content = base64.b64encode(image_bytes).decode("utf-8")
+        
+        url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/images/{filename}"
+        headers = {
+            "Authorization": f"token {GITHUB_TOKEN}",
+            "Accept": "application/vnd.github.v3+json"
+        }
+        payload = {
+            "message": "🖼 Yeni resim yüklendi",
+            "content": b64_content,
+            "branch": "main"
+        }
+        res = requests.put(url, headers=headers, json=payload)
+        
+        if res.status_code in [200, 201]:
+            image_url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/main/images/{filename}"
+        else:
+            image_url = "https://images.unsplash.com/photo-1585829365295-ab7cd400c167?auto=format&fit=crop&w=800&q=80"
+            await update.message.reply_text("⚠️ Resim GitHub'a yüklenemedi. Varsayılan resim kullanılacak.")
     else:
-        image_url = text
+        text = update.message.text
+        if text and text.lower() == 'gec':
+            image_url = "https://images.unsplash.com/photo-1585829365295-ab7cd400c167?auto=format&fit=crop&w=800&q=80"
+        else:
+            image_url = text
 
     context.user_data['manual_news']['image'] = image_url
     
@@ -398,9 +453,9 @@ async def ask_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "title": context.user_data['manual_news']['title'],
         "summary": context.user_data['manual_news']['summary'],
         "content": context.user_data['manual_news']['content'],
-        "source": "Özel İçerik",
+        "source": context.user_data['manual_news']['source'],
         "image": image_url,
-        "date": datetime.now().strftime("%Y-%m-%d %H:%M")
+        "date": datetime.now(TR_TZ).strftime("%Y-%m-%d %H:%M")
     }
     
     PENDING_NEWS[news_id] = news_data
@@ -439,44 +494,140 @@ async def ask_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 async def cancel_news(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("İşlem iptal edildi.")
+    context.user_data.clear()
+    await update.message.reply_text("🚫 Devam eden işlem iptal edildi.")
     return ConversationHandler.END
 
+async def global_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_authorized(update.effective_user.id):
+        return
+    
+    # Tüm kullanıcı verilerini ve bekleyen haber onaylarını temizle
+    context.user_data.clear()
+    cleared_count = len(PENDING_NEWS)
+    PENDING_NEWS.clear()
+    
+    await update.message.reply_text(f"✅ Bütün işlemler iptal edildi ve bekleyen {cleared_count} onay temizlendi.")
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if str(update.effective_user.id) != str(TELEGRAM_CHAT_ID):
+    if not is_authorized(update.effective_user.id):
         await update.message.reply_text("⛔ Üzgünüm, bu bot kişiye özeldir. Erişim yetkiniz bulunmamaktadır.")
         return
     await update.message.reply_text("👋 Haber Onay Botu Aktif! Yeni haberler düştüğünde onayınıza sunulacak.\nKomutları menüden görebilirsiniz.")
 
 async def manual_scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if str(update.effective_user.id) != str(TELEGRAM_CHAT_ID): return
+    if not is_authorized(update.effective_user.id): return
     await update.message.reply_text("🔍 RSS kaynakları taranıyor...")
     await check_rss_and_notify(context)
     await update.message.reply_text("✅ Tarama tamamlandı.")
 
+async def stop_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_authorized(update.effective_user.id):
+        await update.message.reply_text("⛔ Yetkiniz yok!")
+        return
+    await update.message.reply_text("🛑 Bot tamamen durduruluyor ve kapatılıyor... (Tekrar açmak için sunucudan/terminalden başlatmalısınız)")
+    # Bot sürecini tamamen sonlandır
+    os._exit(0)
+
+async def login_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.effective_user.id)
+    if is_authorized(user_id):
+        await update.message.reply_text("✅ Zaten yetkilisiniz.")
+        return
+        
+    if not context.args:
+        await update.message.reply_text("⚠️ Kullanım: `/giris <şifre>`", parse_mode="Markdown")
+        return
+        
+    password = context.args[0]
+    if password == ADMIN_PASSWORD:
+        save_auth_user(user_id)
+        await update.message.reply_text("🎉 Başarıyla giriş yaptınız! Artık botu yönetebilir ve haber onaylayabilirsiniz.")
+    else:
+        await update.message.reply_text("❌ Hatalı şifre!")
+
+async def logout_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.effective_user.id)
+    if user_id == str(TELEGRAM_CHAT_ID):
+        await update.message.reply_text("👑 Siz ana yöneticisiniz, yetkinizi kaldıramazsınız.")
+        return
+    
+    users = load_auth_users()
+    if user_id in users:
+        users.remove(user_id)
+        with open(AUTH_FILE, "w", encoding="utf-8") as f:
+            json.dump(list(users), f)
+        await update.message.reply_text("🚪 Başarıyla çıkış yaptınız. Yetkileriniz alındı.")
+    else:
+        await update.message.reply_text("⚠️ Zaten giriş yapmamışsınız.")
+
+async def reset_auth_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.effective_user.id)
+    if user_id != str(TELEGRAM_CHAT_ID):
+        await update.message.reply_text("⛔ Bu komutu sadece ANA YÖNETİCİ kullanabilir!")
+        return
+        
+    with open(AUTH_FILE, "w", encoding="utf-8") as f:
+        json.dump([], f)
+    await update.message.reply_text("🧹 Tüm ek yetkililerin erişimi başarıyla sıfırlandı! Artık siteyi sadece siz yönetebilirsiniz.")
+
+async def change_password_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.effective_user.id)
+    if user_id != str(TELEGRAM_CHAT_ID):
+        await update.message.reply_text("⛔ Bu komutu sadece ANA YÖNETİCİ kullanabilir!")
+        return
+        
+    if not context.args:
+        await update.message.reply_text("⚠️ Kullanım: `/sifredegistir <yeni_şifre>`", parse_mode="Markdown")
+        return
+        
+    new_password = context.args[0]
+    global ADMIN_PASSWORD
+    ADMIN_PASSWORD = new_password
+    
+    cfg = {}
+    if os.path.exists("config.json"):
+        try:
+            with open("config.json", "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+        except:
+            pass
+            
+    cfg["ADMIN_PASSWORD"] = new_password
+    try:
+        with open("config.json", "w", encoding="utf-8") as f:
+            json.dump(cfg, f, indent=4)
+        await update.message.reply_text(f"✅ Giriş şifresi başarıyla `{new_password}` olarak değiştirildi!", parse_mode="Markdown")
+    except Exception as e:
+        await update.message.reply_text("⚠️ Şifre değiştirildi ancak ayar dosyasına kaydedilemedi.")
+
 async def post_init(application: Application):
     commands = [
         BotCommand("start", "Botu başlatır"),
+        BotCommand("giris", "Şifre ile yetki al (Örn: /giris 123)"),
+        BotCommand("cikis", "Yetkini bırak ve çıkış yap"),
+        BotCommand("sifredegistir", "(Admin) Şifreyi değiştir"),
+        BotCommand("yetkilerisifirla", "(Admin) Herkesi at"),
         BotCommand("haberler", "Sitedeki haberleri listele ve yönet"),
         BotCommand("haberekle", "Adım adım manuel haber ekle"),
         BotCommand("tara", "RSS kaynaklarını şimdi tara"),
-        BotCommand("iptal", "Devam eden işlemi iptal et")
+        BotCommand("iptal", "Devam eden işlemi iptal et"),
+        BotCommand("kapat", "Botu tamamen durdur ve kapat")
     ]
     await application.bot.set_my_commands(commands)
-
-import httpx
-_old_async_init = httpx.AsyncClient.__init__
-def _new_async_init(self, *args, **kwargs):
-    kwargs['verify'] = False
-    _old_async_init(self, *args, **kwargs)
-httpx.AsyncClient.__init__ = _new_async_init
 
 def main():
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).post_init(post_init).build()
 
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("giris", login_command))
+    app.add_handler(CommandHandler("cikis", logout_command))
+    app.add_handler(CommandHandler("sifredegistir", change_password_command))
+    app.add_handler(CommandHandler("yetkilerisifirla", reset_auth_command))
     app.add_handler(CommandHandler("haberler", list_news))
     app.add_handler(CommandHandler("tara", manual_scan))
+    app.add_handler(CommandHandler("kapat", stop_bot))
+    app.add_handler(CommandHandler("iptal", global_cancel))
     
     edit_conv_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(start_edit, pattern="^edit:")],
@@ -496,7 +647,8 @@ def main():
             TITLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_title)],
             SUMMARY: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_summary)],
             CONTENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_content)],
-            IMAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_image)],
+            SOURCE: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_source)],
+            IMAGE: [MessageHandler((filters.PHOTO | filters.TEXT) & ~filters.COMMAND, ask_image)],
         },
         fallbacks=[CommandHandler("iptal", cancel_news)]
     )
