@@ -15,13 +15,14 @@
 </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Yusuf Emir - Web Geliştirici</title>
+    <title>Yusuf Emir - Web Geliştirici & Teknoloji Haberleri</title>
     <link rel="stylesheet" href="style.css">
 </head>
 
 <body>
     <header class="main-header">
         <div class="header-left">
+            <a href="#news" class="header-btn">HABERLER 🔥</a>
             <a href="#contact" class="header-btn">İLETİŞİM ↗</a>
             <a href="#about" class="header-btn">HAKKIMDA ↓</a>
         </div>
@@ -35,6 +36,18 @@
 
 
     <section class="hero-spacer"></section>
+
+
+    <section class="cream-screen" id="news">
+        <div class="news-container">
+            <span class="about-label">GÜNCEL TEKNOLOJİ HABERLERİ</span>
+            <h2 class="section-title">Gündemdeki Gelişmeler</h2>
+            <p class="section-subtitle">Yapay zeka ve teknoloji dünyasından onaylanmış en son haberler.</p>
+            <div id="newsGrid" class="news-grid">
+                <!-- Haberler Dinamik Olarak news.json İçinden Yüklenecek -->
+            </div>
+        </div>
+    </section>
 
 
     <section class="cream-screen" id="about">
@@ -70,8 +83,21 @@
         </div>
     </section>
 
+    <!-- Haber Detay Modalı -->
+    <div id="newsModal" class="news-modal">
+        <div class="news-modal-content">
+            <span class="close-modal">&times;</span>
+            <img id="modalImage" class="modal-img" src="" alt="">
+            <div class="modal-body">
+                <span id="modalDate" class="news-date"></span>
+                <h2 id="modalTitle" class="modal-title"></h2>
+                <div id="modalText" class="modal-text"></div>
+            </div>
+        </div>
+    </div>
+
     <canvas id="particleCanvas"></canvas>
     <script src="script.js"></script>
 </body>
 
-</html>
+</html>

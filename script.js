@@ -220,3 +220,63 @@ window.addEventListener('resize', () => {
         init();
     }, 200);
 });
+
+// Haberleri news.json İçinden Yükleme
+document.addEventListener('DOMContentLoaded', () => {
+    fetchNews();
+});
+
+function fetchNews() {
+    fetch('news.json')
+        .then(response => response.json())
+        .then(data => {
+            renderNews(data);
+        })
+        .catch(err => {
+            console.error('Haberler yüklenirken hata oluştu:', err);
+        });
+}
+
+function renderNews(newsList) {
+    const grid = document.getElementById('newsGrid');
+    if (!grid) return;
+
+    if (!newsList || newsList.length === 0) {
+        grid.innerHTML = '<p style="color: #666;">Henüz yayınlanmış bir haber bulunmuyor.</p>';
+        return;
+    }
+
+    grid.innerHTML = newsList.map(item => `
+        <div class="news-card" onclick="openNewsModal('${item.id}')">
+            <img src="${item.image || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80'}" alt="${item.title}" class="news-image">
+            <div class="news-body">
+                <span class="news-date">${item.date || ''} • ${item.source || 'Teknoloji'}</span>
+                <h3 class="news-title">${item.title}</h3>
+                <p class="news-summary">${item.summary}</p>
+                <span class="news-read-more">Devamını Oku ↗</span>
+            </div>
+        </div>
+    `).join('');
+
+    window.currentNewsList = newsList;
+}
+
+function openNewsModal(newsId) {
+    const news = window.currentNewsList.find(n => n.id === newsId);
+    if (!news) return;
+
+    document.getElementById('modalImage').src = news.image || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80';
+    document.getElementById('modalDate').innerText = `${news.date} | ${news.source}`;
+    document.getElementById('modalTitle').innerText = news.title;
+    document.getElementById('modalText').innerText = news.content;
+
+    const modal = document.getElementById('newsModal');
+    modal.style.display = 'flex';
+}
+
+document.addEventListener('click', (e) => {
+    const modal = document.getElementById('newsModal');
+    if (e.target.classList.contains('close-modal') || e.target === modal) {
+        modal.style.display = 'none';
+    }
+});

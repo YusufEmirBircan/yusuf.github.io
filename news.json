@@ -1,0 +1,11 @@
+[
+  {
+    "id": "sample-1",
+    "title": "Yapay Zeka ve Web Teknolojilerinde Yeni Dönem",
+    "summary": "Otomatik haber otomasyonu ve yapay zeka entegrasyonları ile web yayıncılığı baştan tanımlanıyor.",
+    "content": "Gelişen yapay zeka teknolojileri, içerik üreticilerinin ve web geliştiricilerinin iş akışlarını hızlandırmaya devam ediyor. Otomatik RSS tarama ve Gemini API entegrasyonu sayesinde güncel haberler anında işlenerek yayına hazır hale getiriliyor.",
+    "source": "Teknoloji Gündemi",
+    "image": "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80",
+    "date": "2026-08-12 12:40"
+  }
+]
