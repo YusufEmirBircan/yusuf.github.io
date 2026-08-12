@@ -33,7 +33,7 @@ NEWS_FILE_PATH = "news.json"
 PROCESSED_FILE = "processed_urls.json"
 PENDING_FILE = "pending_news.json"
 
-# Manuel Haber Ekleme Adımları (Conversation States)
+# Manuel Haber Ekleme Adımları
 TITLE, SUMMARY, CONTENT, IMAGE = range(4)
 
 # Local secret override
@@ -247,16 +247,23 @@ async def check_rss_and_notify(context: ContextTypes.DEFAULT_TYPE):
 # ==================== MANUEL HABER EKLEME AKIŞI ====================
 
 async def manual_add_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if str(update.effective_user.id) != str(TELEGRAM_CHAT_ID):
+    user_id = str(update.effective_user.id)
+    
+    if user_id != str(TELEGRAM_CHAT_ID):
         await update.message.reply_text("⛔ Bu botu kullanma yetkiniz yok!")
         return ConversationHandler.END
 
-    await update.message.reply_text("✍️ *Manuel Haber Ekleme Sihirbazı*\n\nLütfen haberin *BAŞLIĞINI* girin:\n_(İptal etmek için /iptal yazabilirsiniz)_", parse_mode="Markdown")
+    await update.message.reply_text(
+        "✍️ *Manuel Haber Ekleme Sihirbazı*\n\n"
+        "Lütfen haberin *BAŞLIĞINI* girin:\n"
+        "_(İptal etmek için /iptal yazabilirsiniz)_", 
+        parse_mode="Markdown"
+    )
     return TITLE
 
 async def manual_get_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['title'] = update.message.text
-    await update.message.reply_text("📝 Harika. Şimdi haberin kısa *ÖZETİNİ* girin (1-2 cümle):", parse_mode="Markdown")
+    await update.message.reply_text("📝 Harika! Şimdi haberin kısa *ÖZETİNİ* girin (1-2 cümle):", parse_mode="Markdown")
     return SUMMARY
 
 async def manual_get_summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -409,7 +416,7 @@ def main():
     app.add_handler(conv_handler)
     app.add_handler(CallbackQueryHandler(button_handler))
     
-    # SAATLİK KONTROL
+    # SAATLİK KONTROL (1 Saat = 3600 Saniye)
     job_queue = app.job_queue
     job_queue.run_repeating(check_rss_and_notify, interval=3600, first=5)
     
