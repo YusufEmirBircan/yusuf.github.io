@@ -1,5 +1,14 @@
 [
   {
+    "id": "news_manual_1786534108",
+    "title": "Manuel Haber Başlığı",
+    "summary": "gec...",
+    "content": "gec",
+    "source": "Özel İçerik",
+    "image": "https://images.unsplash.com/photo-1585829365295-ab7cd400c167?auto=format&fit=crop&w=800&q=80",
+    "date": "2026-08-12 14:28"
+  },
+  {
     "id": "test_1786528137",
     "title": "Yapay Zeka Teknolojisinde Devrim: Gemini 3.6 Flash Modeli Tanitildi",
     "summary": "Google, yeni nesil yapay zeka modeli Gemini 3.6 Flash ile hiz ve performansta cigir aciyor.",
