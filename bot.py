@@ -15,6 +15,7 @@ ssl._create_default_https_context = ssl._create_unverified_context
 
 # ==================== CONFIGURATION ====================
 
+# Güvenlik nedeniyle token'ları çevre değişkenlerinden veya lokal config'den okuyoruz
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
@@ -22,8 +23,8 @@ GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 
 GITHUB_REPO = "YusufEmirBircan/yusufEmirBircan.github.io"
 NEWS_FILE_PATH = "news.json"
-PROCESSED_FILE = "processed_urls.json"
 
+# Local secret override if exists
 if os.path.exists("config.json"):
     try:
         with open("config.json", "r", encoding="utf-8") as f:
@@ -35,6 +36,7 @@ if os.path.exists("config.json"):
     except Exception:
         pass
 
+# RSS Kaynakları (Teknoloji & Gündem)
 RSS_FEEDS = [
     "https://webtekno.com/rss.xml",
     "https://shiftdelete.net/feed",
@@ -43,11 +45,11 @@ RSS_FEEDS = [
     "https://www.theverge.com/rss/index.xml"
 ]
 
+PROCESSED_FILE = "processed_urls.json"
 PENDING_NEWS = {}
 
+# Google Gemini Client
 gemini_client = genai.Client(api_key=GEMINI_API_KEY)
-
-# ==================== YARDIMCI FONKSİYONLAR ====================
 
 def load_processed_urls():
     if os.path.exists(PROCESSED_FILE):
@@ -79,11 +81,11 @@ Lütfen cevabını SADECE aşağıdaki JSON formatında ver (başka açıklama v
 }}
 """
     try:
-        response = gemini_client.models.generate_content(
-            model="gemini-1.5-flash",
-            contents=prompt
+        response = gemini_client.interactions.create(
+            model="gemini-3.6-flash",
+            input=prompt
         )
-        output_text = response.text.strip()
+        output_text = response.output_text.strip()
         if output_text.startswith("```json"):
             output_text = output_text.replace("```json", "", 1)
         if output_text.endswith("```"):
@@ -98,12 +100,13 @@ Lütfen cevabını SADECE aşağıdaki JSON formatında ver (başka açıklama v
         }
 
 def push_to_github(news_item):
-    url = f"[https://api.github.com/repos/](https://api.github.com/repos/){GITHUB_REPO}/contents/{NEWS_FILE_PATH}"
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{NEWS_FILE_PATH}"
     headers = {
         "Authorization": f"token {GITHUB_TOKEN}",
         "Accept": "application/vnd.github.v3+json"
     }
     
+    # Mevcut news.json dosyasını çek
     res = requests.get(url, headers=headers)
     sha = None
     existing_news = []
@@ -117,7 +120,10 @@ def push_to_github(news_item):
         except Exception:
             existing_news = []
     
+    # Yeni haberi başa ekle
     existing_news.insert(0, news_item)
+    
+    # En güncel 30 haberi tut
     existing_news = existing_news[:30]
     
     updated_content = json.dumps(existing_news, ensure_ascii=False, indent=2)
@@ -134,8 +140,6 @@ def push_to_github(news_item):
     put_res = requests.put(url, headers=headers, json=payload)
     return put_res.status_code in [200, 201]
 
-# ==================== RSS İŞLEMLERİ ====================
-
 async def check_rss_and_notify(context: ContextTypes.DEFAULT_TYPE):
     processed = load_processed_urls()
     print(f"[{datetime.now().strftime('%H:%M:%S')}] RSS Kaynakları taranıyor...")
@@ -151,12 +155,14 @@ async def check_rss_and_notify(context: ContextTypes.DEFAULT_TYPE):
                 title = entry.get("title", "Başlıksız")
                 summary = entry.get("summary", entry.get("description", ""))
                 
-                image_url = "[https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80](https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80)"
+                # Görsel bulma
+                image_url = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80"
                 if "media_content" in entry and len(entry.media_content) > 0:
                     image_url = entry.media_content[0].get("url", image_url)
                 elif "enclosures" in entry and len(entry.enclosures) > 0:
                     image_url = entry.enclosures[0].get("url", image_url)
                 
+                # AI ile haberi düzenle
                 print(f"Yeni haber bulundu: {title}")
                 ai_news = generate_ai_news(title, summary)
                 
@@ -174,10 +180,11 @@ async def check_rss_and_notify(context: ContextTypes.DEFAULT_TYPE):
                 PENDING_NEWS[news_id] = news_data
                 save_processed_url(link)
                 
+                # Telegram mesajı gönder
                 keyboard = [
                     [
-                        InlineKeyboardButton("✅ Yayınla", callback_data=f"publish:{news_id}"),
-                        InlineKeyboardButton("❌ Reddet", callback_data=f"reject:{news_id}")
+                        InlineKeyboardButton("✅ Yayınla", callback_query_data=f"publish:{news_id}"),
+                        InlineKeyboardButton("❌ Reddet", callback_query_data=f"reject:{news_id}")
                     ]
                 ]
                 reply_markup = InlineKeyboardMarkup(keyboard)
@@ -204,76 +211,17 @@ async def check_rss_and_notify(context: ContextTypes.DEFAULT_TYPE):
                         parse_mode="Markdown",
                         reply_markup=reply_markup
                     )
+                
+                # Her çalışmada en fazla 1 yeni haber işleyelim
                 return
                 
         except Exception as e:
             print(f"RSS ayrıştırma hatası ({feed_url}): {e}")
 
-# ==================== MANUEL HABER EKLEME ====================
-
-async def haberekle_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Chat ID Kontrolü
-    if str(update.effective_user.id) != str(TELEGRAM_CHAT_ID):
-        return
-
-    raw_text = update.message.text.replace("/haberekle", "").strip()
-
-    if not raw_text or "|" not in raw_text:
-        await update.message.reply_text(
-            "✍️ *Manuel Haber Ekleme*\n\n"
-            "Lütfen bilgileri aralarına **|** (dikey çizgi) koyarak tek mesajda gönderin:\n\n"
-            "`/haberekle Başlık | Özet | Detaylı İçerik`\n\n"
-            "*Örnek:*\n"
-            "`/haberekle Yeni Yerli Çip | Türkiye kendi çipini üretti | Detaylı haber içeriği buraya yazılır.`",
-            parse_mode="Markdown"
-        )
-        return
-
-    parts = [p.strip() for p in raw_text.split("|")]
-    title = parts[0]
-    summary = parts[1] if len(parts) > 1 else title
-    content = parts[2] if len(parts) > 2 else summary
-    image_url = "[https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80](https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80)"
-
-    news_id = f"news_{int(time.time())}"
-    news_data = {
-        "id": news_id,
-        "title": title,
-        "summary": summary,
-        "content": content,
-        "source": "Özel Yazar",
-        "image": image_url,
-        "date": datetime.now().strftime("%Y-%m-%d %H:%M")
-    }
-
-    PENDING_NEWS[news_id] = news_data
-
-    keyboard = [
-        [
-            InlineKeyboardButton("✅ Yayınla", callback_data=f"publish:{news_id}"),
-            InlineKeyboardButton("❌ Reddet", callback_data=f"reject:{news_id}")
-        ]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    caption = (
-        f"✍️ *MANUEL HABER ONAYI*\n\n"
-        f"📌 *Başlık:* {news_data['title']}\n\n"
-        f"📝 *Özet:* {news_data['summary']}\n\n"
-        f"📄 *İçerik:* {news_data['content'][:150]}..."
-    )
-
-    await update.message.reply_text(
-        text=caption,
-        parse_mode="Markdown",
-        reply_markup=reply_markup
-    )
-
-# ==================== BOT HANDLERS ====================
-
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     
+    # Güvenlik Kontrolü: Sadece SİZİN Telegram ID'niz işlem yapabilir
     if str(query.from_user.id) != str(TELEGRAM_CHAT_ID):
         await query.answer("⛔ Bu botu kullanma yetkiniz yok!", show_alert=True)
         return
@@ -294,7 +242,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await query.edit_message_caption(caption=f"⚠️ *Yayınlama Hatası:* GitHub'a gönderilemedi.", parse_mode="Markdown")
             del PENDING_NEWS[news_id]
         else:
-            await query.edit_message_caption(caption="⚠️ Haber bulunamadı veya süresi doldu.")
+            await query.edit_message_caption(caption="⚠️ Haber süresi doldu veya bulunamadı.")
             
     elif action == "reject":
         news_item = PENDING_NEWS.get(news_id)
@@ -305,14 +253,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if str(update.effective_user.id) != str(TELEGRAM_CHAT_ID):
-        await update.message.reply_text("⛔ Üzgünüm, bu bot kişiye özeldir.")
+        await update.message.reply_text("⛔ Üzgünüm, bu bot kişiye özeldir. Erişim yetkiniz bulunmamaktadır.")
         return
-    await update.message.reply_text(
-        "👋 Haber Onay Botu Aktif!\n\n"
-        "• Otomatik haberler RSS ile düşer.\n"
-        "• Manuel haber eklemek için:\n`/haberekle Başlık | Özet | İçerik`",
-        parse_mode="Markdown"
-    )
+    await update.message.reply_text("👋 Haber Onay Botu Aktif! Yeni haberler düştüğünde onayınıza sunulacak.")
+
 
 import httpx
 
@@ -325,16 +269,19 @@ httpx.AsyncClient.__init__ = _new_async_init
 def main():
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
+
+    
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("haberekle", haberekle_command))
     app.add_handler(CallbackQueryHandler(button_handler))
     
-    # Her 3600 saniyede bir (1 Saat) RSS kontrolü yap
+    # Her 60 saniyede bir RSS kontrolü yap
     job_queue = app.job_queue
-    job_queue.run_repeating(check_rss_and_notify, interval=3600, first=5)
+    job_queue.run_repeating(check_rss_and_notify, interval=60, first=5)
     
-    print("[INFO] Haber Botu baslatildi...")
+    print("[INFO] Haber Botu baslatildi... Dinleniyor...")
     app.run_polling()
+
+
 
 if __name__ == "__main__":
     main()
