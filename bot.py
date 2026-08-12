@@ -4,12 +4,17 @@ import time
 import requests
 import feedparser
 import base64
+import ssl
 from datetime import datetime
 from google import genai
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
+ssl._create_default_https_context = ssl._create_unverified_context
+
+
 # ==================== CONFIGURATION ====================
+
 # Güvenlik nedeniyle token'ları çevre değişkenlerinden veya lokal config'den okuyoruz
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
@@ -243,8 +248,18 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("👋 Haber Onay Botu Aktif! Yeni haberler düştüğünde onayınıza sunulacak.")
 
+import httpx
+
+_old_async_init = httpx.AsyncClient.__init__
+def _new_async_init(self, *args, **kwargs):
+    kwargs['verify'] = False
+    _old_async_init(self, *args, **kwargs)
+httpx.AsyncClient.__init__ = _new_async_init
+
 def main():
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+
+
     
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler))
@@ -253,8 +268,11 @@ def main():
     job_queue = app.job_queue
     job_queue.run_repeating(check_rss_and_notify, interval=60, first=5)
     
-    print("🤖 Haber Botu başlatıldı... Dinleniyor...")
+    print("[INFO] Haber Botu baslatildi... Dinleniyor...")
     app.run_polling()
+
+
 
 if __name__ == "__main__":
     main()
+
