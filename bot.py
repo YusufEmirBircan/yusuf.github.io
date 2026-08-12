@@ -22,6 +22,7 @@ GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 
 GITHUB_REPO = "YusufEmirBircan/yusufEmirBircan.github.io"
 NEWS_FILE_PATH = "news.json"
+PROCESSED_FILE = "processed_urls.json"
 
 if os.path.exists("config.json"):
     try:
@@ -42,10 +43,11 @@ RSS_FEEDS = [
     "https://www.theverge.com/rss/index.xml"
 ]
 
-PROCESSED_FILE = "processed_urls.json"
 PENDING_NEWS = {}
 
 gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+
+# ==================== YARDIMCI FONKSİYONLAR ====================
 
 def load_processed_urls():
     if os.path.exists(PROCESSED_FILE):
@@ -132,6 +134,8 @@ def push_to_github(news_item):
     put_res = requests.put(url, headers=headers, json=payload)
     return put_res.status_code in [200, 201]
 
+# ==================== RSS İŞLEMLERİ ====================
+
 async def check_rss_and_notify(context: ContextTypes.DEFAULT_TYPE):
     processed = load_processed_urls()
     print(f"[{datetime.now().strftime('%H:%M:%S')}] RSS Kaynakları taranıyor...")
@@ -200,19 +204,18 @@ async def check_rss_and_notify(context: ContextTypes.DEFAULT_TYPE):
                         parse_mode="Markdown",
                         reply_markup=reply_markup
                     )
-                
                 return
                 
         except Exception as e:
             print(f"RSS ayrıştırma hatası ({feed_url}): {e}")
 
-# ==================== MANUEL HABER EKLEME (YENİ) ====================
+# ==================== MANUEL HABER EKLEME ====================
 
 async def haberekle_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Chat ID Kontrolü
     if str(update.effective_user.id) != str(TELEGRAM_CHAT_ID):
         return
 
-    # Komutun yanına metin yazılmış mı kontrol et
     raw_text = update.message.text.replace("/haberekle", "").strip()
 
     if not raw_text or "|" not in raw_text:
@@ -221,7 +224,7 @@ async def haberekle_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Lütfen bilgileri aralarına **|** (dikey çizgi) koyarak tek mesajda gönderin:\n\n"
             "`/haberekle Başlık | Özet | Detaylı İçerik`\n\n"
             "*Örnek:*\n"
-            "`/haberekle Yeni Mobil İşlemci | Yerli çip üretildi | Detaylı haber metni buraya gelir.`",
+            "`/haberekle Yeni Yerli Çip | Türkiye kendi çipini üretti | Detaylı haber içeriği buraya yazılır.`",
             parse_mode="Markdown"
         )
         return
@@ -266,7 +269,7 @@ async def haberekle_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=reply_markup
     )
 
-# ==================== BUTON HANDLER ====================
+# ==================== BOT HANDLERS ====================
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -291,18 +294,18 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await query.edit_message_caption(caption=f"⚠️ *Yayınlama Hatası:* GitHub'a gönderilemedi.", parse_mode="Markdown")
             del PENDING_NEWS[news_id]
         else:
-            await query.edit_message_text(text="⚠️ Haber bulunamadı veya süresi doldu.")
+            await query.edit_message_caption(caption="⚠️ Haber bulunamadı veya süresi doldu.")
             
     elif action == "reject":
         news_item = PENDING_NEWS.get(news_id)
         title = news_item['title'] if news_item else "Haber"
         if news_id in PENDING_NEWS:
             del PENDING_NEWS[news_id]
-        await query.edit_message_text(text=f"❌ *REDDEDİLDİ:* {title}", parse_mode="Markdown")
+        await query.edit_message_caption(caption=f"❌ *REDDEDİLDİ:* {title}", parse_mode="Markdown")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if str(update.effective_user.id) != str(TELEGRAM_CHAT_ID):
-        await update.message.reply_text("⛔ Üzgünüm, bu bot kişiye özeldir. Erişim yetkiniz bulunmamaktadır.")
+        await update.message.reply_text("⛔ Üzgünüm, bu bot kişiye özeldir.")
         return
     await update.message.reply_text(
         "👋 Haber Onay Botu Aktif!\n\n"
@@ -326,11 +329,11 @@ def main():
     app.add_handler(CommandHandler("haberekle", haberekle_command))
     app.add_handler(CallbackQueryHandler(button_handler))
     
-    # 3600 saniye = 1 Saat
+    # Her 3600 saniyede bir (1 Saat) RSS kontrolü yap
     job_queue = app.job_queue
     job_queue.run_repeating(check_rss_and_notify, interval=3600, first=5)
     
-    print("[INFO] Haber Botu baslatildi... Dinleniyor...")
+    print("[INFO] Haber Botu baslatildi...")
     app.run_polling()
 
 if __name__ == "__main__":
