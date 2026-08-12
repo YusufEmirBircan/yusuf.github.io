@@ -8,7 +8,7 @@ import ssl
 from datetime import datetime
 from google import genai
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 
 ssl._create_default_https_context = ssl._create_unverified_context
 
@@ -107,7 +107,7 @@ def push_to_github(news_item):
     }
     
     # Mevcut news.json dosyasını çek
-    res = requests.get(url, headers=headers)
+    res = requests.get(url, headers=headers, verify=False)
     sha = None
     existing_news = []
     
@@ -137,7 +137,7 @@ def push_to_github(news_item):
     if sha:
         payload["sha"] = sha
         
-    put_res = requests.put(url, headers=headers, json=payload)
+    put_res = requests.put(url, headers=headers, json=payload, verify=False)
     return put_res.status_code in [200, 201]
 
 async def check_rss_and_notify(context: ContextTypes.DEFAULT_TYPE):
@@ -183,8 +183,8 @@ async def check_rss_and_notify(context: ContextTypes.DEFAULT_TYPE):
                 # Telegram mesajı gönder
                 keyboard = [
                     [
-                        InlineKeyboardButton("✅ Yayınla", callback_query_data=f"publish:{news_id}"),
-                        InlineKeyboardButton("❌ Reddet", callback_query_data=f"reject:{news_id}")
+                        InlineKeyboardButton("✅ Yayınla", callback_data=f"publish:{news_id}"),
+                        InlineKeyboardButton("❌ Reddet", callback_data=f"reject:{news_id}")
                     ]
                 ]
                 reply_markup = InlineKeyboardMarkup(keyboard)
@@ -251,6 +251,98 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             del PENDING_NEWS[news_id]
         await query.edit_message_caption(caption=f"❌ *REDDEDİLDİ:* {title}", parse_mode="Markdown")
 
+def generate_manual_news(user_text):
+    prompt = f"""
+Kullanıcıdan gelen şu metni veya linki kullanarak SEO uyumlu, tamamen özgün, Türkçe ve ilgi çekici bir haber makalesine dönüştür.
+Eğer sadece bir link verilmişse, linkten yola çıkarak mantıklı bir haber oluştur.
+
+Kullanıcı Girdisi: {user_text}
+
+Lütfen cevabını SADECE aşağıdaki JSON formatında ver:
+{{
+  "title": "SEO Uyumlu Özgün Türkçe Başlık",
+  "summary": "1-2 cümlelik ilgi çekici Türkçe haber özeti",
+  "content": "Detaylı, anlaşılır ve özgün Türkçe haber içeriği (2-3 paragraf)"
+}}
+"""
+    try:
+        response = gemini_client.interactions.create(
+            model="gemini-3.6-flash",
+            input=prompt
+        )
+        output_text = response.output_text.strip()
+        if output_text.startswith("```json"):
+            output_text = output_text.replace("```json", "", 1)
+        if output_text.endswith("```"):
+            output_text = output_text[:-3]
+        return json.loads(output_text.strip())
+    except Exception as e:
+        print(f"Gemini API hatası (Manuel): {e}")
+        return {
+            "title": "Manuel Haber Başlığı",
+            "summary": user_text[:150] + "...",
+            "content": user_text
+        }
+
+async def handle_manual_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if str(update.effective_user.id) != str(TELEGRAM_CHAT_ID):
+        return
+        
+    user_text = update.message.text
+    if not user_text:
+        return
+        
+    msg = await update.message.reply_text("⏳ Girdiniz analiz ediliyor ve haber oluşturuluyor...")
+    
+    print(f"Manuel haber isteği alındı: {user_text[:50]}...")
+    ai_news = generate_manual_news(user_text)
+    
+    news_id = f"news_manual_{int(time.time())}"
+    news_data = {
+        "id": news_id,
+        "title": ai_news.get("title", "Başlık Bulunamadı"),
+        "summary": ai_news.get("summary", "Özet Bulunamadı"),
+        "content": ai_news.get("content", "İçerik Bulunamadı"),
+        "source": "Özel İçerik",
+        "image": "https://images.unsplash.com/photo-1585829365295-ab7cd400c167?auto=format&fit=crop&w=800&q=80",
+        "date": datetime.now().strftime("%Y-%m-%d %H:%M")
+    }
+    
+    PENDING_NEWS[news_id] = news_data
+    
+    keyboard = [
+        [
+            InlineKeyboardButton("✅ Yayınla", callback_data=f"publish:{news_id}"),
+            InlineKeyboardButton("❌ Reddet", callback_data=f"reject:{news_id}")
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    caption = (
+        f"📰 *YENİ MANUEL HABER ONAYI*\n\n"
+        f"📌 *Başlık:* {news_data['title']}\n\n"
+        f"📝 *Özet:* {news_data['summary']}\n\n"
+        f"🌐 *Kaynak:* {news_data['source']}"
+    )
+    
+    await msg.delete()
+    
+    try:
+        await context.bot.send_photo(
+            chat_id=TELEGRAM_CHAT_ID,
+            photo=news_data["image"],
+            caption=caption,
+            parse_mode="Markdown",
+            reply_markup=reply_markup
+        )
+    except Exception:
+        await context.bot.send_message(
+            chat_id=TELEGRAM_CHAT_ID,
+            text=caption,
+            parse_mode="Markdown",
+            reply_markup=reply_markup
+        )
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if str(update.effective_user.id) != str(TELEGRAM_CHAT_ID):
         await update.message.reply_text("⛔ Üzgünüm, bu bot kişiye özeldir. Erişim yetkiniz bulunmamaktadır.")
@@ -273,10 +365,11 @@ def main():
     
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_manual_message))
     
-    # Her 60 saniyede bir RSS kontrolü yap
+    # Her 1 saatte (3600 saniye) bir RSS kontrolü yap
     job_queue = app.job_queue
-    job_queue.run_repeating(check_rss_and_notify, interval=60, first=5)
+    job_queue.run_repeating(check_rss_and_notify, interval=3600, first=5)
     
     print("[INFO] Haber Botu baslatildi... Dinleniyor...")
     app.run_polling()
