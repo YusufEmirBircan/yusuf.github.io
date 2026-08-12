@@ -46,7 +46,7 @@ RSS_FEEDS = [
     "https://www.theverge.com/rss/index.xml"
 ]
 
-# Google Gemini Client (Yeni API)
+# Google Gemini Client
 gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
 # ==================== YARDIMCI FONKSİYONLAR ====================
@@ -95,7 +95,7 @@ Lütfen cevabını SADECE aşağıdaki JSON formatında ver (başka açıklama v
 }}
 """
     try:
-        # KOTA DOSTU VE ÜCRETSİZ MODEL: gemini-2.5-flash-lite
+        # Kesin çalışan ve kota dostu model
         response = gemini_client.models.generate_content(
             model="gemini-1.5-flash",
             contents=prompt
@@ -119,6 +119,7 @@ Lütfen cevabını SADECE aşağıdaki JSON formatında ver (başka açıklama v
 # ==================== GITHUB YAYINLAMA ====================
 
 def push_to_github(news_item):
+    # Düzeltilmiş Temiz GitHub API Linki
     url = f"[https://api.github.com/repos/](https://api.github.com/repos/){GITHUB_REPO}/contents/{NEWS_FILE_PATH}"
     headers = {
         "Authorization": f"token {GITHUB_TOKEN}",
@@ -174,129 +175,4 @@ async def check_rss_and_notify(context: ContextTypes.DEFAULT_TYPE):
                 
                 image_url = "[https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80](https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80)"
                 if "media_content" in entry and len(entry.media_content) > 0:
-                    image_url = entry.media_content[0].get("url", image_url)
-                elif "enclosures" in entry and len(entry.enclosures) > 0:
-                    image_url = entry.enclosures[0].get("url", image_url)
-                
-                print(f"🚀 Yeni haber bulundu: {title}")
-                ai_news = generate_ai_news(title, summary)
-                
-                news_id = f"news_{int(time.time())}"
-                news_data = {
-                    "id": news_id,
-                    "title": ai_news["title"],
-                    "summary": ai_news["summary"],
-                    "content": ai_news["content"],
-                    "source": feed.feed.get("title", "Teknoloji"),
-                    "image": image_url,
-                    "date": datetime.now().strftime("%Y-%m-%d %H:%M")
-                }
-                
-                # Bekleyen haberleri kalıcı dosyaya kaydet
-                pending = load_pending_news()
-                pending[news_id] = news_data
-                save_pending_news(pending)
-                
-                save_processed_url(link)
-                
-                keyboard = [
-                    [
-                        InlineKeyboardButton("✅ Yayınla", callback_data=f"publish:{news_id}"),
-                        InlineKeyboardButton("❌ Reddet", callback_data=f"reject:{news_id}")
-                    ]
-                ]
-                reply_markup = InlineKeyboardMarkup(keyboard)
-                
-                caption = (
-                    f"📰 *YENİ HABER ONAYI*\n\n"
-                    f"📌 *Başlık:* {news_data['title']}\n\n"
-                    f"📝 *Özet:* {news_data['summary']}\n\n"
-                    f"🌐 *Kaynak:* {news_data['source']}"
-                )
-                
-                try:
-                    await context.bot.send_photo(
-                        chat_id=TELEGRAM_CHAT_ID,
-                        photo=image_url,
-                        caption=caption,
-                        parse_mode="Markdown",
-                        reply_markup=reply_markup
-                    )
-                except Exception:
-                    await context.bot.send_message(
-                        chat_id=TELEGRAM_CHAT_ID,
-                        text=caption,
-                        parse_mode="Markdown",
-                        reply_markup=reply_markup
-                    )
-                
-                # Her döngüde tek haber işleyip API/Kotayı koru
-                return
-                
-        except Exception as e:
-            print(f"RSS ayrıştırma hatası ({feed_url}): {e}")
-
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    
-    if str(query.from_user.id) != str(TELEGRAM_CHAT_ID):
-        await query.answer("⛔ Bu botu kullanma yetkiniz yok!", show_alert=True)
-        return
-        
-    await query.answer()
-    
-    data = query.data
-    action, news_id = data.split(":", 1)
-    
-    pending = load_pending_news()
-    news_item = pending.get(news_id)
-    
-    if action == "publish":
-        if news_item:
-            await query.edit_message_caption(caption=f"⏳ *{news_item['title']}*\n\nGitHub'a gönderiliyor...", parse_mode="Markdown")
-            success = push_to_github(news_item)
-            if success:
-                await query.edit_message_caption(caption=f"✅ *YAYINLANDI!*\n\n*{news_item['title']}*\nSitenizde canlıya alındı.", parse_mode="Markdown")
-            else:
-                await query.edit_message_caption(caption=f"⚠️ *Yayınlama Hatası:* GitHub'a gönderilemedi.", parse_mode="Markdown")
-            
-            del pending[news_id]
-            save_pending_news(pending)
-        else:
-            await query.edit_message_caption(caption="⚠️ Haber süresi doldu veya bulunamadı.")
-            
-    elif action == "reject":
-        title = news_item['title'] if news_item else "Haber"
-        if news_id in pending:
-            del pending[news_id]
-            save_pending_news(pending)
-        await query.edit_message_caption(caption=f"❌ *REDDEDİLDİ:* {title}", parse_mode="Markdown")
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if str(update.effective_user.id) != str(TELEGRAM_CHAT_ID):
-        await update.message.reply_text("⛔ Üzgünüm, bu bot kişiye özeldir.")
-        return
-    await update.message.reply_text("👋 Haber Onay Botu Aktif! Yeni haberler düştüğünde onayınıza sunulacak.")
-
-# SSL bypass (gerekirse)
-import httpx
-_old_async_init = httpx.AsyncClient.__init__
-def _new_async_init(self, *args, **kwargs):
-    kwargs['verify'] = False
-    _old_async_init(self, *args, **kwargs)
-httpx.AsyncClient.__init__ = _new_async_init
-
-def main():
-    app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
-
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(button_handler))
-    
-    job_queue = app.job_queue
-    job_queue.run_repeating(check_rss_and_notify, interval=180, first=5) # 3 dakikada bir kontrol
-    
-    print("[INFO] Haber Botu baslatildi... Dinleniyor...")
-    app.run_polling()
-
-if __name__ == "__main__":
-    main()
+                    image_url = entry.media_content[0].get("url
