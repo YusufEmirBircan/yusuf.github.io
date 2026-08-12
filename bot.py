@@ -448,11 +448,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await update.message.reply_text("👋 Haber Onay Botu Aktif! Yeni haberler düştüğünde onayınıza sunulacak.\nKomutları menüden görebilirsiniz.")
 
+async def manual_scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if str(update.effective_user.id) != str(TELEGRAM_CHAT_ID): return
+    await update.message.reply_text("🔍 RSS kaynakları taranıyor...")
+    await check_rss_and_notify(context)
+    await update.message.reply_text("✅ Tarama tamamlandı.")
+
 async def post_init(application: Application):
     commands = [
         BotCommand("start", "Botu başlatır"),
         BotCommand("haberler", "Sitedeki haberleri listele ve yönet"),
         BotCommand("haberekle", "Adım adım manuel haber ekle"),
+        BotCommand("tara", "RSS kaynaklarını şimdi tara"),
         BotCommand("iptal", "Devam eden işlemi iptal et")
     ]
     await application.bot.set_my_commands(commands)
@@ -469,6 +476,7 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("haberler", list_news))
+    app.add_handler(CommandHandler("tara", manual_scan))
     
     edit_conv_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(start_edit, pattern="^edit:")],
