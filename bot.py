@@ -220,6 +220,12 @@ async def check_rss_and_notify(context: ContextTypes.DEFAULT_TYPE):
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    
+    # Güvenlik Kontrolü: Sadece SİZİN Telegram ID'niz işlem yapabilir
+    if str(query.from_user.id) != str(TELEGRAM_CHAT_ID):
+        await query.answer("⛔ Bu botu kullanma yetkiniz yok!", show_alert=True)
+        return
+        
     await query.answer()
     
     data = query.data
@@ -246,7 +252,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_caption(caption=f"❌ *REDDEDİLDİ:* {title}", parse_mode="Markdown")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if str(update.effective_user.id) != str(TELEGRAM_CHAT_ID):
+        await update.message.reply_text("⛔ Üzgünüm, bu bot kişiye özeldir. Erişim yetkiniz bulunmamaktadır.")
+        return
     await update.message.reply_text("👋 Haber Onay Botu Aktif! Yeni haberler düştüğünde onayınıza sunulacak.")
+
 
 import httpx
 
