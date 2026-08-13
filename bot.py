@@ -226,10 +226,26 @@ async def check_rss_and_notify(context: ContextTypes.DEFAULT_TYPE):
             feed = feedparser.parse(raw_content)
             feed.feed['link'] = feed_url  # kaynak linki koru
 
-            for entry in feed.entries[:10]:  # Her feed'den en fazla 10 entry incele
+            feed_new_count = 0  # Bu feed'den bulunan yeni haber sayısı
+            one_hour_ago = datetime.now(TR_TZ) - timedelta(hours=1)
+
+            for entry in feed.entries[:10]:  # Her feed'den en fazla 10 entry kontrol et
+                if feed_new_count >= 3:  # Bu feed'den en fazla 3 yeni haber al
+                    break
+
                 link = entry.get("link", "")
                 if not link or link in processed:
                     continue
+
+                # Haberin yayın tarihini kontrol et (son 1 saat içinde mi?)
+                published = entry.get("published_parsed") or entry.get("updated_parsed")
+                if published:
+                    try:
+                        entry_time = datetime(*published[:6], tzinfo=timezone.utc).astimezone(TR_TZ)
+                        if entry_time < one_hour_ago:
+                            continue  # 1 saatten eski haberleri atla
+                    except Exception:
+                        pass  # Tarih parse edilemezse haberi yine de al
 
                 title = entry.get("title", "Başlıksız")
                 raw_summary = entry.get("summary", entry.get("description", ""))
@@ -267,6 +283,7 @@ async def check_rss_and_notify(context: ContextTypes.DEFAULT_TYPE):
                 PENDING_NEWS[news_id] = news_data
                 save_processed_url(link)  # Hemen işlenmiş olarak işaretle (tekrar gönderme)
                 found_count += 1
+                feed_new_count += 1
 
                 keyboard = [
                     [
