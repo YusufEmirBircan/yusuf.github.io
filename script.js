@@ -260,7 +260,7 @@ function renderNews(newsList) {
     }
 
     grid.innerHTML = newsList.map(item => `
-        <div class="news-card" onclick="openNewsModal('${escapeHTML(item.id)}')">
+        <div class="news-card" onclick="window.open('${escapeHTML(item.sourceUrl)}', '_blank')">
             <img src="${escapeHTML(item.image) || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80'}" alt="${escapeHTML(item.title)}" class="news-image">
             <div class="news-body">
                 <span class="news-date">${escapeHTML(item.category || 'Diğer')} • ${escapeHTML(item.date) || ''}</span>
@@ -274,18 +274,6 @@ function renderNews(newsList) {
     window.currentNewsList = newsList;
 }
 
-function openNewsModal(newsId) {
-    const news = window.currentNewsList.find(n => n.id === newsId);
-    if (!news) return;
-
-    document.getElementById('modalImage').src = news.image || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80';
-    document.getElementById('modalDate').innerText = `${news.date} | ${news.source}`;
-    document.getElementById('modalTitle').innerText = news.title;
-    document.getElementById('modalText').innerText = news.content;
-
-    const modal = document.getElementById('newsModal');
-    modal.style.display = 'flex';
-}
 
 document.addEventListener('DOMContentLoaded', () => {
     const filterBtns = document.querySelectorAll('.cat-btn');
@@ -306,9 +294,4 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
-document.addEventListener('click', (e) => {
-    const modal = document.getElementById('newsModal');
-    if (e.target.classList.contains('close-modal') || e.target === modal) {
-        modal.style.display = 'none';
-    }
-});
+

@@ -1,4 +1,5 @@
 import os
+import asyncio
 import json
 import time
 import requests
@@ -7,7 +8,6 @@ import base64
 import ssl
 from datetime import datetime, timezone, timedelta
 TR_TZ = timezone(timedelta(hours=3))
-from google import genai
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, BotCommand
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters, ConversationHandler
 
@@ -58,8 +58,6 @@ PENDING_NEWS = {}
 TITLE, SUMMARY, CONTENT, SOURCE, CATEGORY, IMAGE = range(6)
 EDIT_TITLE, EDIT_SUMMARY, EDIT_CONTENT, EDIT_IMAGE = range(6, 10)
 
-gemini_client = genai.Client(api_key=GEMINI_API_KEY)
-
 def load_processed_urls():
     if os.path.exists(PROCESSED_FILE):
         try:
@@ -95,40 +93,8 @@ def save_processed_url(url):
     with open(PROCESSED_FILE, "w", encoding="utf-8") as f:
         json.dump(list(urls), f, ensure_ascii=False, indent=2)
 
-def generate_ai_news(original_title, original_summary):
-    prompt = f"""
-Sana bir teknoloji haberi başlığı ve özeti vereceğim. Bu haberi tamamen özgün, Türkçe, ilgi çekici ve SEO uyumlu bir haber makalesine dönüştür.
-Ayrıca bu haberin kategorisini şu üç seçenekten birine ayır: "Dünya", "Teknoloji", "Son dakika".
-
-Orijinal Başlık: {original_title}
-Orijinal İçerik/Özet: {original_summary}
-
-Lütfen cevabını SADECE aşağıdaki JSON formatında ver (başka açıklama veya kod bloğu ekleme):
-{{
-  "title": "SEO Uyumlu Özgün Türkçe Başlık",
-  "summary": "1-2 cümlelik ilgi çekici Türkçe haber özeti",
-  "content": "Detaylı, anlaşılır ve özgün Türkçe haber içeriği (2-3 paragraf)",
-  "category": "Dünya, Teknoloji veya Son dakika"
-}}
-"""
-    try:
-        response = gemini_client.interactions.create(
-            model="gemini-3.6-flash",
-            input=prompt
-        )
-        output_text = response.output_text.strip()
-        if output_text.startswith("```json"):
-            output_text = output_text.replace("```json", "", 1)
-        if output_text.endswith("```"):
-            output_text = output_text[:-3]
-        return json.loads(output_text.strip())
-    except Exception as e:
-        print(f"Gemini API hatası: {e}")
-        return {
-            "title": original_title,
-            "summary": original_summary[:150] + "...",
-            "content": original_summary
-        }
+# NOT: Yapay zeka yeniden yazma özelliği devre dışı.
+# RSS'ten gelen orijinal içerik doğrudan kullanılır.
 
 def fetch_news_from_github():
     url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{NEWS_FILE_PATH}"
@@ -191,8 +157,11 @@ def update_news_by_id(news_item):
 
 async def check_rss_and_notify(context: ContextTypes.DEFAULT_TYPE):
     processed = load_processed_urls()
-    print(f"[{datetime.now(TR_TZ).strftime('%H:%M:%S')}] RSS Kaynakları taranıyor...")
+    now_str = datetime.now(TR_TZ).strftime('%H:%M:%S')
+    print(f"[{now_str}] RSS Kaynakları taranıyor...")
     
+    found_count = 0  # Bu taramada bulunan yeni haber sayısı
+
     for feed_url in RSS_FEEDS:
         try:
             # SSL sorunu yaşayan RSS siteleri için özel handler kullan
@@ -203,38 +172,42 @@ async def check_rss_and_notify(context: ContextTypes.DEFAULT_TYPE):
             raw_content = response.read()
             feed = feedparser.parse(raw_content)
             feed.feed['link'] = feed_url  # kaynak linki koru
-            for entry in feed.entries[:3]:
+
+            for entry in feed.entries[:10]:  # Her feed'den en fazla 10 entry incele
                 link = entry.get("link", "")
                 if not link or link in processed:
                     continue
-                
+
                 title = entry.get("title", "Başlıksız")
                 summary = entry.get("summary", entry.get("description", ""))
-                
+
                 image_url = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80"
                 if "media_content" in entry and len(entry.media_content) > 0:
                     image_url = entry.media_content[0].get("url", image_url)
                 elif "enclosures" in entry and len(entry.enclosures) > 0:
                     image_url = entry.enclosures[0].get("url", image_url)
-                
+
                 print(f"Yeni haber bulundu: {title}")
-                ai_news = generate_ai_news(title, summary)
-                
-                news_id = f"news_{int(time.time())}"
+
+                # İçerik kopyalama kaldırıldı, sadece özet kullanılıyor
+
+                # Her haber için benzersiz ID: zaman + link hash ile çakışma önle
+                news_id = f"news_{abs(hash(link)) % 10**9}_{int(time.time())}"
                 news_data = {
                     "id": news_id,
-                    "title": ai_news.get("title", title),
-                    "summary": ai_news.get("summary", summary),
-                    "content": ai_news.get("content", summary),
-                    "category": ai_news.get("category", "Teknoloji"),
+                    "title": title,
+                    "summary": (summary[:200] + '...') if summary and len(summary) > 200 else (summary or title),
+                    "category": "Teknoloji",
                     "source": feed.feed.get("title", "Teknoloji"),
+                    "sourceUrl": link,
                     "image": image_url,
                     "date": datetime.now(TR_TZ).strftime("%Y-%m-%d %H:%M")
                 }
-                
+
                 PENDING_NEWS[news_id] = news_data
-                save_processed_url(link)
-                
+                save_processed_url(link)  # Hemen işlenmiş olarak işaretle (tekrar gönderme)
+                found_count += 1
+
                 keyboard = [
                     [
                         InlineKeyboardButton("✅ Yayınla", callback_data=f"publish:{news_id}"),
@@ -242,14 +215,14 @@ async def check_rss_and_notify(context: ContextTypes.DEFAULT_TYPE):
                     ]
                 ]
                 reply_markup = InlineKeyboardMarkup(keyboard)
-                
+
                 caption = (
                     f"📰 *YENİ HABER ONAYI*\n\n"
                     f"📌 *Başlık:* {news_data['title']}\n\n"
                     f"📝 *Özet:* {news_data['summary']}\n\n"
                     f"🌐 *Kaynak:* {news_data['source']}"
                 )
-                
+
                 try:
                     await context.bot.send_photo(
                         chat_id=TELEGRAM_CHAT_ID,
@@ -265,9 +238,26 @@ async def check_rss_and_notify(context: ContextTypes.DEFAULT_TYPE):
                         parse_mode="Markdown",
                         reply_markup=reply_markup
                     )
-                return
+
+                # Her haber arasında kısa bekleme (Telegram rate limit)
+                await asyncio.sleep(1)
+
         except Exception as e:
             print(f"RSS ayrıştırma hatası ({feed_url}): {e}")
+
+    # Tarama özeti gönder
+    if found_count == 0:
+        print(f"[{datetime.now(TR_TZ).strftime('%H:%M:%S')}] Tarama tamamlandı. Yeni haber bulunamadı.")
+    else:
+        print(f"[{datetime.now(TR_TZ).strftime('%H:%M:%S')}] Tarama tamamlandı. {found_count} yeni haber onaya gönderildi.")
+        try:
+            await context.bot.send_message(
+                chat_id=TELEGRAM_CHAT_ID,
+                text=f"✅ *Tarama tamamlandı!*\n📊 Toplam *{found_count}* yeni haber onayınıza sunuldu.",
+                parse_mode="Markdown"
+            )
+        except Exception:
+            pass
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -694,7 +684,13 @@ def main():
     app.add_handler(CallbackQueryHandler(button_handler))
     
     job_queue = app.job_queue
-    job_queue.run_repeating(check_rss_and_notify, interval=3600, first=5)
+
+    # Saatin başında (XX:00) çalışacak şekilde bir sonraki tam saate kadar bekle,
+    # sonra her 3600 saniyede (1 saat) tekrar et — kullanıcının son tarama zamanına bağımlı değil.
+    now = datetime.now(TR_TZ)
+    seconds_to_next_hour = 3600 - (now.minute * 60 + now.second)
+    print(f"[INFO] İlk otomatik tarama {seconds_to_next_hour} saniye sonra (bir sonraki tam saatte) başlayacak.")
+    job_queue.run_repeating(check_rss_and_notify, interval=3600, first=seconds_to_next_hour)
     
     print("[INFO] Haber Botu baslatildi... Dinleniyor...")
     app.run_polling()
