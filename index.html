@@ -22,18 +22,24 @@
 <body>
     <header class="main-header">
         <div class="header-left">
-            <a href="/" class="header-btn">ANA SAYFA 🏠</a>
-            <a href="haberler" class="header-btn">HABERLER 🔥</a>
-            <a href="#contact" class="header-btn">İLETİŞİM ↗</a>
-            <a href="#about" class="header-btn">HAKKIMDA ↓</a>
+            <!-- Ana sayfada sol üst boş -->
         </div>
         <div class="header-right">
-            <div class="menu-card">
+            <div class="menu-card" id="menuToggle">
                 <span>MENÜ</span>
-
             </div>
         </div>
     </header>
+
+    <div class="menu-overlay" id="menuOverlay">
+        <span class="close-menu" id="closeMenu">&times;</span>
+        <div class="menu-links">
+            <a href="/">ANA SAYFA</a>
+            <a href="haberler">HABERLER</a>
+            <a href="#about">HAKKIMDA</a>
+            <a href="#contact">İLETİŞİM</a>
+        </div>
+    </div>
 
 
     <section class="hero-spacer"></section>

@@ -292,6 +292,29 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     });
+
+    // Menü Aç/Kapat Mantığı
+    const menuToggle = document.getElementById('menuToggle');
+    const closeMenu = document.getElementById('closeMenu');
+    const menuOverlay = document.getElementById('menuOverlay');
+    const menuLinks = document.querySelectorAll('.menu-links a');
+
+    if (menuToggle && closeMenu && menuOverlay) {
+        menuToggle.addEventListener('click', () => {
+            menuOverlay.classList.add('active');
+        });
+
+        closeMenu.addEventListener('click', () => {
+            menuOverlay.classList.remove('active');
+        });
+
+        // Menüdeki bir linke tıklayınca menüyü otomatik kapat
+        menuLinks.forEach(link => {
+            link.addEventListener('click', () => {
+                menuOverlay.classList.remove('active');
+            });
+        });
+    }
 });
 
 
