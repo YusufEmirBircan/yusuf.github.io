@@ -634,7 +634,7 @@ async def change_password_command(update: Update, context: ContextTypes.DEFAULT_
 
 async def duyuru_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    if user_id not in admin_users:
+    if not is_authorized(user_id):
         await update.message.reply_text("Bu komutu kullanmaya yetkiniz yok. Önce /giris yapın.")
         return
         
