@@ -177,7 +177,7 @@ body {
 }
 
 .ticker-bar:hover .ticker {
-    animation-play-state: paused;
+    /* JS ile yumusak duraklatma yapiliyor */
 }
 
 @keyframes tickerAnim {

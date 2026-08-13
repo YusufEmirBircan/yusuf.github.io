@@ -240,6 +240,7 @@ async function fetchAnnouncement() {
             tickerText.textContent = data.announcement;
             tickerBar.style.display = 'block';
             document.body.classList.add('has-ticker');
+            initSmoothTicker(tickerText);
         } else {
             tickerBar.style.display = 'none';
             document.body.classList.remove('has-ticker');
@@ -247,6 +248,41 @@ async function fetchAnnouncement() {
     } catch (error) {
         console.log("Duyuru dosyası yüklenemedi:", error);
     }
+}
+
+function initSmoothTicker(el) {
+    // Başlangıç pozisyonu ekranın sağından başlar
+    let pos = window.innerWidth;
+    let speed = 0.8;          // Normal hız (px/frame)
+    let currentSpeed = speed;
+    let targetSpeed = speed;
+    const acceleration = 0.03; // Yumuşak geçiş hızı
+    let animFrameId;
+
+    function animate() {
+        // Hedefe doğru yumuşakça yaklaş
+        currentSpeed += (targetSpeed - currentSpeed) * acceleration;
+        pos -= currentSpeed;
+
+        // Yazı tamamen sol kenardan çıktıysa sağdan tekrar başlat
+        if (pos < -el.offsetWidth) {
+            pos = window.innerWidth;
+        }
+
+        el.style.transform = `translateX(${pos}px)`;
+        el.style.animation = 'none'; // CSS animasyonunu devre dışı bırak
+        animFrameId = requestAnimationFrame(animate);
+    }
+
+    const tickerBar = el.closest('.ticker-bar');
+    tickerBar.addEventListener('mouseenter', () => {
+        targetSpeed = 0; // Yavaşça dur
+    });
+    tickerBar.addEventListener('mouseleave', () => {
+        targetSpeed = speed; // Yavaşça devam et
+    });
+
+    animate();
 }
 
 window.allNewsList = [];
