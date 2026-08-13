@@ -318,17 +318,41 @@ function renderNews(newsList) {
         return;
     }
 
-    grid.innerHTML = newsList.map(item => `
-        <div class="news-card" onclick="window.open('${escapeHTML(item.sourceUrl)}', '_blank')">
-            <img src="${escapeHTML(item.image) || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80'}" alt="${escapeHTML(item.title)}" class="news-image">
-            <div class="news-body">
-                <span class="news-date">${escapeHTML(item.category || 'Diğer')} • ${escapeHTML(item.date) || ''}</span>
-                <h3 class="news-title">${escapeHTML(item.title)}</h3>
-                <p class="news-summary">${escapeHTML(item.summary)}</p>
-                <span class="news-read-more">Devamını Oku ↗</span>
+    grid.innerHTML = newsList.map(item => {
+        const isExternal = !!item.sourceUrl;
+        
+        let clickAction = '';
+        let readMoreHtml = '';
+        let contentHtml = '';
+        
+        if (isExternal) {
+            clickAction = `onclick="window.open('${escapeHTML(item.sourceUrl)}', '_blank')" style="cursor: pointer;"`;
+            readMoreHtml = `<span class="news-read-more">Devamını Oku ↗</span>`;
+            contentHtml = `<p class="news-summary">${escapeHTML(item.summary)}</p>`;
+        } else {
+            // Manuel haber: Tıklanamaz, devamını oku yok, içerik direkt görünür
+            clickAction = `style="cursor: default;"`;
+            
+            // Eğer summary ve content varsa ikisini de göster, yoksa olanı göster
+            let fullText = escapeHTML(item.summary || '');
+            if (item.content && item.content.trim() !== '') {
+                fullText += `<br><br>${escapeHTML(item.content)}`;
+            }
+            contentHtml = `<p class="news-summary" style="white-space: pre-wrap;">${fullText}</p>`;
+        }
+
+        return `
+            <div class="news-card" ${clickAction}>
+                <img src="${escapeHTML(item.image) || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80'}" alt="${escapeHTML(item.title)}" class="news-image">
+                <div class="news-body">
+                    <span class="news-date">${escapeHTML(item.category || 'Diğer')} • ${escapeHTML(item.date) || ''}</span>
+                    <h3 class="news-title">${escapeHTML(item.title)}</h3>
+                    ${contentHtml}
+                    ${readMoreHtml}
+                </div>
             </div>
-        </div>
-    `).join('');
+        `;
+    }).join('');
 
     window.currentNewsList = newsList;
 }
