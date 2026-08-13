@@ -14,6 +14,17 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Cont
 
 import ssl
 import urllib.request
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+class DummyHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/plain")
+        self.end_headers()
+        self.wfile.write(b"Bot is running!")
+    def log_message(self, format, *args):
+        pass
 
 # feedparser için SSL doğrulamasını devre dışı bırak (RSS siteleri için gerekli)
 _rss_ssl_ctx = ssl.create_default_context()
@@ -819,6 +830,18 @@ def main():
     job_queue.run_repeating(check_rss_and_notify, interval=3600, first=seconds_to_next_hour)
     
     print("[INFO] Haber Botu baslatildi... Dinleniyor...")
+
+    def run_dummy_server():
+        try:
+            port = int(os.environ.get("PORT", 10000))
+            server = HTTPServer(("0.0.0.0", port), DummyHandler)
+            print(f"[INFO] Dummy web server started on port {port}")
+            server.serve_forever()
+        except Exception as e:
+            print(f"[ERROR] Dummy server failed: {e}")
+
+    threading.Thread(target=run_dummy_server, daemon=True).start()
+
     app.run_polling()
 
 if __name__ == "__main__":
