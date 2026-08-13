@@ -167,6 +167,46 @@ def update_news_by_id(news_item):
             return push_news_list_to_github(news_list, sha, f"✏️ Haber güncellendi: {news_item['title'][:30]}...")
     return False
 
+
+def rewrite_news_with_gemini(title, summary):
+    if not GEMINI_API_KEY:
+        return title, summary
+    
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
+    prompt = f"Sen profesyonel bir teknoloji yazarısın. Aşağıda verilen haber başlığını ve özetini tamamen özgün, ilgi çekici ve telif hakkı ihlali yaratmayacak şekilde kendi cümlelerinle Türkçe olarak yeniden yaz. Lütfen önce 'Başlık:' diyerek yeni başlığı, sonra 'Özet:' diyerek yeni özeti yaz (başka hiçbir ek açıklama yapma).\n\nOrijinal Başlık: {title}\nOrijinal Özet: {summary}"
+    
+    payload = {
+        "contents": [{"parts":[{"text": prompt}]}]
+    }
+    
+    try:
+        res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=15)
+        if res.status_code == 200:
+            data = res.json()
+            text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+            
+            # parse Başlık: and Özet:
+            new_title = title
+            new_summary = summary
+            for line in text.split('\n'):
+                line = line.strip()
+                if line.lower().startswith('başlık:'):
+                    new_title = line[7:].strip()
+                    if new_title.startswith('*'): new_title = new_title.replace('*', '')
+                elif line.lower().startswith('özet:'):
+                    new_summary = line[5:].strip()
+                    if new_summary.startswith('*'): new_summary = new_summary.replace('*', '')
+            
+            # fallback if parsing failed
+            if new_title == title and new_summary == summary and "Başlık:" not in text:
+                new_summary = text # If it just dumped the summary
+                
+            return new_title, new_summary
+    except Exception as e:
+        print(f"Gemini API Error: {e}")
+        
+    return title, summary
+
 async def check_rss_and_notify(context: ContextTypes.DEFAULT_TYPE):
     processed = load_processed_urls()
     now_str = datetime.now(TR_TZ).strftime('%H:%M:%S')
@@ -204,16 +244,19 @@ async def check_rss_and_notify(context: ContextTypes.DEFAULT_TYPE):
                 elif "enclosures" in entry and len(entry.enclosures) > 0:
                     image_url = entry.enclosures[0].get("url", image_url)
 
-                print(f"Yeni haber bulundu: {title}")
+                print(f"Yeni haber bulundu, yapay zeka ile yeniden yazılıyor: {title}")
 
-                # İçerik kopyalama kaldırıldı, sadece özet kullanılıyor
+                # Gemini ile özgünleştir
+                ai_title, ai_summary = rewrite_news_with_gemini(title, summary)
+                if not ai_summary:
+                    ai_summary = summary
 
                 # Her haber için benzersiz ID: zaman + link hash ile çakışma önle
                 news_id = f"news_{abs(hash(link)) % 10**9}_{int(time.time())}"
                 news_data = {
                     "id": news_id,
-                    "title": title,
-                    "summary": (summary[:200] + '...') if summary and len(summary) > 200 else (summary or title),
+                    "title": ai_title,
+                    "summary": (ai_summary[:500] + '...') if len(ai_summary) > 500 else ai_summary,
                     "category": "Teknoloji",
                     "source": feed.feed.get("title", "Teknoloji"),
                     "sourceUrl": link,
