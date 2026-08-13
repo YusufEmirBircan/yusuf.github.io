@@ -165,10 +165,9 @@ async def check_rss_and_notify(context: ContextTypes.DEFAULT_TYPE):
 
     for feed_url in RSS_FEEDS:
         try:
-            # SSL sorunu yaşayan siteler için özel handler ve Proxy bypass
-            proxy_handler = urllib.request.ProxyHandler({})
+            # SSL sorunu yaşayan siteler için özel handler
             handler = urllib.request.HTTPSHandler(context=_rss_ssl_ctx)
-            opener = urllib.request.build_opener(proxy_handler, handler)
+            opener = urllib.request.build_opener(handler)
             # Bot korumasına (403 Forbidden) takılmamak için tarayıcı User-Agent'i kullanıyoruz
             opener.addheaders = [('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36')]
             response = opener.open(feed_url, timeout=15)
