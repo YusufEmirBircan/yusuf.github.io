@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="tr">
+<link rel="icon" type="image/png" href="favicon.png">
+
+<head>
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-9P40G1ZW92"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-9P40G1ZW92');
+</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Haberler - Yusuf Emir</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        body { overflow-x: hidden; }
+        #news { min-height: 100vh; padding-top: 120px; }
+    </style>
+</head>
+
+<body>
+    <header class="main-header">
+        <div class="header-left">
+            <a href="index.html" class="header-btn">ANA SAYFA 🏠</a>
+        </div>
+        <div class="header-right">
+            <div class="menu-card">
+                <span>HABERLER</span>
+            </div>
+        </div>
+    </header>
+
+    <section class="cream-screen" id="news">
+        <div class="news-container">
+            <h2 class="section-title">Gündemdeki Gelişmeler</h2>
+            
+            <div class="category-filters" id="categoryFilters">
+                <button class="cat-btn active" data-cat="Tümü">Tümü</button>
+                <button class="cat-btn" data-cat="Dünya">Dünya</button>
+                <button class="cat-btn" data-cat="Teknoloji">Teknoloji</button>
+                <button class="cat-btn" data-cat="Son dakika">Son dakika</button>
+            </div>
+
+            <div id="newsGrid" class="news-grid">
+                <!-- Haberler Dinamik Olarak news.json İçinden Yüklenecek -->
+            </div>
+        </div>
+    </section>
+
+    <canvas id="particleCanvas"></canvas>
+    <script src="script.js"></script>
+</body>
+</html>
