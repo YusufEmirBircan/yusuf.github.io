@@ -223,8 +223,31 @@ window.addEventListener('resize', () => {
 
 // Haberleri news.json İçinden Yükleme
 document.addEventListener('DOMContentLoaded', () => {
+    fetchAnnouncement();
     fetchNews();
 });
+
+// Duyuru Çubuğu Mantığı
+async function fetchAnnouncement() {
+    try {
+        const response = await fetch('announcement.json');
+        if (!response.ok) return;
+        const data = await response.json();
+        const tickerBar = document.getElementById('ticker-bar');
+        const tickerText = document.getElementById('tickerText');
+        
+        if (data.announcement && data.announcement.trim() !== '') {
+            tickerText.textContent = data.announcement;
+            tickerBar.style.display = 'block';
+            document.body.classList.add('has-ticker');
+        } else {
+            tickerBar.style.display = 'none';
+            document.body.classList.remove('has-ticker');
+        }
+    } catch (error) {
+        console.log("Duyuru dosyası yüklenemedi:", error);
+    }
+}
 
 window.allNewsList = [];
 

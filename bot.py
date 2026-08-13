@@ -632,6 +632,52 @@ async def change_password_command(update: Update, context: ContextTypes.DEFAULT_
     except Exception as e:
         await update.message.reply_text("⚠️ Şifre değiştirildi ancak ayar dosyasına kaydedilemedi.")
 
+async def duyuru_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in admin_users:
+        await update.message.reply_text("Bu komutu kullanmaya yetkiniz yok. Önce /giris yapın.")
+        return
+        
+    text = " ".join(context.args)
+    if not text:
+        await update.message.reply_text("Lütfen bir duyuru metni girin veya silmek için '/duyuru sil' yazın.\nÖrn: /duyuru Yeni sitemiz yayında!")
+        return
+        
+    if text.lower() == "sil":
+        data = {"announcement": ""}
+        msg = "✅ Duyuru çubuğu başarıyla kaldırıldı."
+    else:
+        data = {"announcement": text}
+        msg = f"✅ Kayan duyuru eklendi:\n{text}"
+        
+    try:
+        announcement_content = json.dumps(data, ensure_ascii=False, indent=4)
+        url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/announcement.json"
+        headers = {
+            "Authorization": f"token {GITHUB_TOKEN}",
+            "Accept": "application/vnd.github.v3+json"
+        }
+        
+        get_resp = requests.get(url, headers=headers)
+        sha = None
+        if get_resp.status_code == 200:
+            sha = get_resp.json()["sha"]
+            
+        push_data = {
+            "message": "Update announcement",
+            "content": base64.b64encode(announcement_content.encode("utf-8")).decode("utf-8")
+        }
+        if sha:
+            push_data["sha"] = sha
+            
+        put_resp = requests.put(url, headers=headers, json=push_data)
+        if put_resp.status_code in [200, 201]:
+            await update.message.reply_text(msg)
+        else:
+            await update.message.reply_text(f"⚠️ GitHub'a yüklenirken hata oluştu: {put_resp.text}")
+    except Exception as e:
+        await update.message.reply_text(f"⚠️ Hata: {str(e)}")
+
 async def post_init(application: Application):
     commands = [
         BotCommand("start", "Botu başlatır"),
@@ -642,6 +688,7 @@ async def post_init(application: Application):
         BotCommand("haberler", "Sitedeki haberleri listele ve yönet"),
         BotCommand("haberekle", "Adım adım manuel haber ekle"),
         BotCommand("tara", "RSS kaynaklarını şimdi tara"),
+        BotCommand("duyuru", "Siteye kayan yazı ekle (Örn: /duyuru Metin)"),
         BotCommand("iptal", "Devam eden işlemi iptal et"),
         BotCommand("kapat", "Botu tamamen durdur ve kapat")
     ]
@@ -657,6 +704,7 @@ def main():
     app.add_handler(CommandHandler("yetkilerisifirla", reset_auth_command))
     app.add_handler(CommandHandler("haberler", list_news))
     app.add_handler(CommandHandler("tara", manual_scan))
+    app.add_handler(CommandHandler("duyuru", duyuru_command))
     app.add_handler(CommandHandler("kapat", stop_bot))
     app.add_handler(CommandHandler("iptal", global_cancel))
     

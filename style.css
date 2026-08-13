@@ -146,6 +146,49 @@ body {
 }
 
 
+/* Duyuru Kayan Yazı (Ticker) */
+.ticker-bar {
+    width: 100%;
+    background-color: #1a1a1a; /* Siyahtan biraz açık gri */
+    height: 35px;
+    line-height: 35px;
+    overflow: hidden;
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 2000;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
+.ticker-wrap {
+    width: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+.ticker {
+    display: inline-block;
+    white-space: nowrap;
+    animation: tickerAnim 18s linear infinite;
+    color: #f8f5f0;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 1px;
+}
+
+.ticker-bar:hover .ticker {
+    animation-play-state: paused;
+}
+
+@keyframes tickerAnim {
+    0% { transform: translateX(100vw); }
+    100% { transform: translateX(-100%); }
+}
+
+body.has-ticker .main-header {
+    top: 50px !important;
+}
+
 @media (max-width: 768px) {
     .main-header {
         padding: 0 20px;
