@@ -68,6 +68,23 @@ body {
     transform: translateY(-2px);
 }
 
+.home-icon-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    padding: 10px;
+    border-radius: 50%;
+    transition: transform 0.3s ease, background 0.3s ease;
+    cursor: pointer;
+    text-decoration: none;
+}
+
+.home-icon-btn:hover {
+    background: rgba(0, 0, 0, 0.05);
+    transform: translateY(-2px) scale(1.05);
+}
+
 .menu-card {
     padding: 10px 20px;
     gap: 15px;
