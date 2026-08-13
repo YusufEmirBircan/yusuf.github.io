@@ -102,66 +102,47 @@ body {
     letter-spacing: 0;
 }
 
-/* Tam Ekran Menü (Overlay) Stilleri */
-.menu-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
-    background: rgba(3, 3, 3, 0.95);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    z-index: 3000;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.3s ease;
-}
-
-.menu-overlay.active {
-    opacity: 1;
-    pointer-events: all;
-}
-
-.close-menu {
+/* Dropdown Menü Stilleri */
+.menu-dropdown {
     position: absolute;
-    top: 30px;
-    right: 40px;
-    font-size: 50px;
-    font-weight: 300;
-    color: #fff;
-    cursor: pointer;
-    transition: transform 0.3s ease, color 0.3s ease;
-}
-
-.close-menu:hover {
-    transform: rotate(90deg);
-    color: #3b82f6;
-}
-
-.menu-links {
+    top: calc(100% + 15px);
+    right: 0;
+    background: rgba(45, 45, 45, 0.95);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 10px 0;
     display: flex;
     flex-direction: column;
-    gap: 40px;
-    text-align: center;
+    min-width: 160px;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-10px);
+    transition: all 0.3s ease;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
 }
 
-.menu-links a {
+.menu-dropdown.active {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+.menu-dropdown a {
     color: #fff;
     text-decoration: none;
-    font-size: 2.5rem;
-    font-weight: 800;
-    letter-spacing: 3px;
-    transition: color 0.3s ease, transform 0.3s ease;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 12px 25px;
+    transition: background 0.2s ease, color 0.2s ease;
+    text-align: left;
+    letter-spacing: 1px;
 }
 
-.menu-links a:hover {
+.menu-dropdown a:hover {
+    background: rgba(255, 255, 255, 0.08);
     color: #3b82f6;
-    transform: translateY(-3px);
 }
 
 

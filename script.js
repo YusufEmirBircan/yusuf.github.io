@@ -293,25 +293,28 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // Menü Aç/Kapat Mantığı
+    // Dropdown Menü Aç/Kapat Mantığı
     const menuToggle = document.getElementById('menuToggle');
-    const closeMenu = document.getElementById('closeMenu');
-    const menuOverlay = document.getElementById('menuOverlay');
-    const menuLinks = document.querySelectorAll('.menu-links a');
+    const menuDropdown = document.getElementById('menuDropdown');
 
-    if (menuToggle && closeMenu && menuOverlay) {
-        menuToggle.addEventListener('click', () => {
-            menuOverlay.classList.add('active');
+    if (menuToggle && menuDropdown) {
+        menuToggle.addEventListener('click', (e) => {
+            e.stopPropagation(); // Tıklamayı durdur ki body click hemen kapatmasın
+            menuDropdown.classList.toggle('active');
         });
 
-        closeMenu.addEventListener('click', () => {
-            menuOverlay.classList.remove('active');
+        // Dropdown dışına tıklanırsa kapat
+        document.addEventListener('click', (e) => {
+            if (!menuToggle.contains(e.target) && !menuDropdown.contains(e.target)) {
+                menuDropdown.classList.remove('active');
+            }
         });
 
         // Menüdeki bir linke tıklayınca menüyü otomatik kapat
+        const menuLinks = menuDropdown.querySelectorAll('a');
         menuLinks.forEach(link => {
             link.addEventListener('click', () => {
-                menuOverlay.classList.remove('active');
+                menuDropdown.classList.remove('active');
             });
         });
     }
