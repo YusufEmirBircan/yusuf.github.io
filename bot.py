@@ -12,19 +12,68 @@ TR_TZ = timezone(timedelta(hours=3))
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, BotCommand
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters, ConversationHandler
 
-import ssl
 import urllib.request
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-class DummyHandler(BaseHTTPRequestHandler):
+# ==================== KEEP-ALIVE SYSTEM ====================
+_bot_start_time = time.time()
+_last_ping_time = None
+
+class HealthHandler(BaseHTTPRequestHandler):
+    """Render.com ve UptimeRobot için gelişmiş health check endpoint'i."""
     def do_GET(self):
+        global _last_ping_time
+        _last_ping_time = time.time()
+        uptime_seconds = int(time.time() - _bot_start_time)
+        hours, remainder = divmod(uptime_seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        
+        status_data = {
+            "status": "alive",
+            "uptime": f"{hours}h {minutes}m {seconds}s",
+            "uptime_seconds": uptime_seconds,
+            "timestamp": datetime.now(TR_TZ).strftime("%Y-%m-%d %H:%M:%S"),
+            "last_ping": datetime.fromtimestamp(_last_ping_time, TR_TZ).strftime("%H:%M:%S") if _last_ping_time else "N/A"
+        }
+        
         self.send_response(200)
-        self.send_header("Content-type", "text/plain")
+        self.send_header("Content-type", "application/json")
         self.end_headers()
-        self.wfile.write(b"Bot is running!")
+        self.wfile.write(json.dumps(status_data).encode("utf-8"))
+    
+    def do_HEAD(self):
+        """HEAD istekleri için de yanıt ver (bazı monitoring servisleri HEAD kullanır)."""
+        self.send_response(200)
+        self.send_header("Content-type", "application/json")
+        self.end_headers()
+    
     def log_message(self, format, *args):
         pass
+
+def self_ping_loop():
+    """Her 4 dakikada bir kendi kendine ping atarak Render'ın servisi uyutmasını engeller.
+    Render free tier 15 dakika inaktivitede uyutur — bu döngü bunu önler."""
+    port = int(os.environ.get("PORT", 10000))
+    url = f"http://localhost:{port}"
+    
+    # Render'da çalışıyorsa dış URL'yi de kullan (daha güvenilir)
+    render_external_url = os.environ.get("RENDER_EXTERNAL_URL")
+    if render_external_url:
+        url = render_external_url
+    
+    print(f"[KEEP-ALIVE] Self-ping hedefi: {url}")
+    time.sleep(30)  # Servis tamamen başlayana kadar bekle
+    
+    while True:
+        try:
+            resp = requests.get(url, timeout=10)
+            now_str = datetime.now(TR_TZ).strftime('%H:%M:%S')
+            print(f"[KEEP-ALIVE] [{now_str}] Ping OK — Status: {resp.status_code}")
+        except Exception as e:
+            now_str = datetime.now(TR_TZ).strftime('%H:%M:%S')
+            print(f"[KEEP-ALIVE] [{now_str}] Ping HATA: {e}")
+        time.sleep(240)  # 4 dakikada bir (Render 15dk limiti için güvenli aralık)
 
 # feedparser için SSL doğrulamasını devre dışı bırak (RSS siteleri için gerekli)
 _rss_ssl_ctx = ssl.create_default_context()
@@ -170,9 +219,10 @@ def update_news_by_id(news_item):
 
 def rewrite_news_with_gemini(title, summary):
     if not GEMINI_API_KEY:
+        print("[GEMINI] API key bulunamadı, orijinal haber kullanılacak.")
         return title, summary
     
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
     prompt = f"Sen profesyonel bir teknoloji yazarısın. Aşağıda verilen haber başlığını ve özetini tamamen özgün, ilgi çekici ve telif hakkı ihlali yaratmayacak şekilde kendi cümlelerinle Türkçe olarak yeniden yaz. Lütfen önce 'Başlık:' diyerek yeni başlığı, sonra 'Özet:' diyerek yeni özeti yaz (başka hiçbir ek açıklama yapma).\n\nOrijinal Başlık: {title}\nOrijinal Özet: {summary}"
     
     payload = {
@@ -180,10 +230,13 @@ def rewrite_news_with_gemini(title, summary):
     }
     
     try:
-        res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=15)
+        print(f"[GEMINI] İstek gönderiliyor: {title[:50]}...")
+        res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=30)
+        print(f"[GEMINI] Yanıt kodu: {res.status_code}")
         if res.status_code == 200:
             data = res.json()
             text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+            print(f"[GEMINI] Yapay zeka yanıtı alındı: {text[:100]}...")
             
             # parse Başlık: and Özet:
             new_title = title
@@ -199,11 +252,14 @@ def rewrite_news_with_gemini(title, summary):
             
             # fallback if parsing failed
             if new_title == title and new_summary == summary and "Başlık:" not in text:
-                new_summary = text # If it just dumped the summary
+                new_summary = text
                 
+            print(f"[GEMINI] Yeni başlık: {new_title[:50]}...")
             return new_title, new_summary
+        else:
+            print(f"[GEMINI] HATA! Yanıt: {res.text[:300]}")
     except Exception as e:
-        print(f"Gemini API Error: {e}")
+        print(f"[GEMINI] Exception: {e}")
         
     return title, summary
 
@@ -891,16 +947,21 @@ def main():
     
     print("[INFO] Haber Botu baslatildi... Dinleniyor...")
 
-    def run_dummy_server():
+    def run_health_server():
+        """Health check web server — Render ve UptimeRobot burayı kontrol eder."""
         try:
             port = int(os.environ.get("PORT", 10000))
-            server = HTTPServer(("0.0.0.0", port), DummyHandler)
-            print(f"[INFO] Dummy web server started on port {port}")
+            server = HTTPServer(("0.0.0.0", port), HealthHandler)
+            print(f"[INFO] Health check server started on port {port}")
             server.serve_forever()
         except Exception as e:
-            print(f"[ERROR] Dummy server failed: {e}")
+            print(f"[ERROR] Health server failed: {e}")
 
-    threading.Thread(target=run_dummy_server, daemon=True).start()
+    # 1. Health check server'ı başlat
+    threading.Thread(target=run_health_server, daemon=True).start()
+    
+    # 2. Self-ping döngüsünü başlat (Render uyku modunu engeller)
+    threading.Thread(target=self_ping_loop, daemon=True).start()
 
     app.run_polling()
 
