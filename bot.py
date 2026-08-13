@@ -12,6 +12,12 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, BotComm
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters, ConversationHandler
 
 import ssl
+import urllib.request
+
+# feedparser için SSL doğrulamasını devre dışı bırak (RSS siteleri için gerekli)
+_rss_ssl_ctx = ssl.create_default_context()
+_rss_ssl_ctx.check_hostname = False
+_rss_ssl_ctx.verify_mode = ssl.CERT_NONE
 
 
 # ==================== CONFIGURATION ====================
@@ -40,10 +46,10 @@ if os.path.exists("config.json"):
 
 RSS_FEEDS = [
     "https://webtekno.com/rss.xml",
-    "https://shiftdelete.net/feed",
-    "https://www.donanimhaber.com/rss/tum/teknoloji.xml",
     "https://feeds.feedburner.com/TechCrunch/",
-    "https://www.theverge.com/rss/index.xml"
+    "https://www.theverge.com/rss/index.xml",
+    "https://www.chip.com.tr/rss",
+    "https://www.wired.com/feed/rss"
 ]
 
 PROCESSED_FILE = "processed_urls.json"
@@ -189,7 +195,14 @@ async def check_rss_and_notify(context: ContextTypes.DEFAULT_TYPE):
     
     for feed_url in RSS_FEEDS:
         try:
-            feed = feedparser.parse(feed_url)
+            # SSL sorunu yaşayan RSS siteleri için özel handler kullan
+            handler = urllib.request.HTTPSHandler(context=_rss_ssl_ctx)
+            opener = urllib.request.build_opener(handler)
+            opener.addheaders = [('User-Agent', 'Mozilla/5.0 (compatible; RSSBot/1.0)')]
+            response = opener.open(feed_url, timeout=15)
+            raw_content = response.read()
+            feed = feedparser.parse(raw_content)
+            feed.feed['link'] = feed_url  # kaynak linki koru
             for entry in feed.entries[:3]:
                 link = entry.get("link", "")
                 if not link or link in processed:
