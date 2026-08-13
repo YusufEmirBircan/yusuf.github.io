@@ -306,10 +306,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def list_news(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update.effective_user.id): return
-    await update.message.reply_text("⏳ Sitenizdeki haberler getiriliyor...")
+    reply_func = update.message.reply_text if update.message else update.callback_query.message.reply_text
+    await reply_func("⏳ Sitenizdeki haberler getiriliyor...")
     news_list, _ = fetch_news_from_github()
     if not news_list:
-        await update.message.reply_text("Sitenizde henüz haber bulunmuyor.")
+        await reply_func("Sitenizde henüz haber bulunmuyor.")
         return
         
     for item in news_list[:5]:
@@ -321,7 +322,7 @@ async def list_news(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         msg = f"📌 *{item['title']}*\n_{item['date']}_\n\n{item['summary'][:100]}..."
-        await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=reply_markup)
+        await reply_func(msg, parse_mode="Markdown", reply_markup=reply_markup)
 
 async def start_edit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -399,23 +400,30 @@ async def edit_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def add_news_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update.effective_user.id):
         return ConversationHandler.END
+    
+    if update.callback_query:
+        await update.callback_query.answer()
+        reply_func = update.callback_query.message.reply_text
+    else:
+        reply_func = update.message.reply_text
+        
     context.user_data['manual_news'] = {}
-    await update.message.reply_text("Yeni haber ekleme işlemine başladık.\n\nLütfen haberin **BAŞLIĞINI** yazın (İptal için /iptal yazın):", parse_mode="Markdown")
+    await reply_func("Yeni haber ekleme işlemine başladık.\n\nLütfen haberin **BAŞLIĞINI** yazın:", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ İptal Et", callback_data="cancel_action")]]))
     return TITLE
 
 async def ask_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['manual_news']['title'] = update.message.text
-    await update.message.reply_text("Harika. Şimdi lütfen haberin **ÖZETİNİ** yazın:", parse_mode="Markdown")
+    await update.message.reply_text("Harika. Şimdi lütfen haberin **ÖZETİNİ** yazın:", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ İptal Et", callback_data="cancel_action")]]))
     return SUMMARY
 
 async def ask_summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['manual_news']['summary'] = update.message.text
-    await update.message.reply_text("Güzel. Şimdi lütfen haberin **İÇERİĞİNİ** yazın:", parse_mode="Markdown")
+    await update.message.reply_text("Güzel. Şimdi lütfen haberin **İÇERİĞİNİ** yazın:", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ İptal Et", callback_data="cancel_action")]]))
     return CONTENT
 
 async def ask_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['manual_news']['content'] = update.message.text
-    await update.message.reply_text("Şimdi lütfen haberin **KAYNAĞINI** yazın (Örn: Özel İçerik, Webtekno):", parse_mode="Markdown")
+    await update.message.reply_text("Şimdi lütfen haberin **KAYNAĞINI** yazın (Örn: Özel İçerik, Webtekno):", parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ İptal Et", callback_data="cancel_action")]]))
     return SOURCE
 
 async def ask_source(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -540,11 +548,27 @@ async def global_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(f"✅ Bütün işlemler iptal edildi ve bekleyen {cleared_count} onay temizlendi.")
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def send_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update.effective_user.id):
-        await update.message.reply_text("⛔ Üzgünüm, bu bot kişiye özeldir. Erişim yetkiniz bulunmamaktadır.")
+        if update.message:
+            await update.message.reply_text("⛔ Üzgünüm, bu bot kişiye özeldir. Erişim yetkiniz bulunmamaktadır.")
         return
-    await update.message.reply_text("👋 Haber Onay Botu Aktif! Yeni haberler düştüğünde onayınıza sunulacak.\nKomutları menüden görebilirsiniz.")
+
+    keyboard = [
+        [InlineKeyboardButton("📰 Haberleri Yönet", callback_data="menu:news")],
+        [InlineKeyboardButton("➕ Manuel Haber Ekle", callback_data="menu:add_news"), InlineKeyboardButton("🔍 RSS Tara", callback_data="menu:scan")],
+        [InlineKeyboardButton("⚙️ Ayarlar", callback_data="menu:settings")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    text = "👋 *Haber Onay Botu Ana Menüsü*\n\nLütfen yapmak istediğiniz işlemi seçin:"
+    
+    if update.callback_query:
+        await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+    else:
+        await update.message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await send_main_menu(update, context)
 
 async def manual_scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_authorized(update.effective_user.id): return
@@ -678,9 +702,55 @@ async def duyuru_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"⚠️ Hata: {str(e)}")
 
+
+async def cancel_action_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    context.user_data.clear()
+    await query.edit_message_text("🚫 Devam eden işlem iptal edildi.")
+    return ConversationHandler.END
+
+async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    if not is_authorized(query.from_user.id):
+        await query.answer("⛔ Yetkiniz yok!", show_alert=True)
+        return
+        
+    await query.answer()
+    data = query.data
+    
+    if data == "menu:main":
+        await send_main_menu(update, context)
+    elif data == "menu:settings":
+        keyboard = [
+            [InlineKeyboardButton("📢 Duyuru Yönetimi", callback_data="menu:announcement")],
+            [InlineKeyboardButton("🔑 Şifre Değiştir", callback_data="menu:change_pwd"), InlineKeyboardButton("🧹 Yetkileri Sıfırla", callback_data="menu:reset_auth")],
+            [InlineKeyboardButton("🛑 Botu Kapat", callback_data="menu:stop_bot")],
+            [InlineKeyboardButton("⬅️ Ana Menüye Dön", callback_data="menu:main")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        text = "⚙️ *Ayarlar*\n\nBuradan sistem ayarlarını yönetebilirsiniz (Bu komutlar sohbete yazılarak kullanılır):"
+        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+    elif data == "menu:news":
+        await list_news(update, context)
+    elif data == "menu:scan":
+        await query.edit_message_text("🔍 RSS kaynakları taranıyor, lütfen bekleyin...")
+        await check_rss_and_notify(context)
+        await query.message.reply_text("✅ Tarama tamamlandı.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Ana Menüye Dön", callback_data="menu:main")]]))
+    elif data == "menu:announcement":
+        await query.message.reply_text("📢 Duyuru eklemek için `/duyuru Yeni Sitemiz Yayında` veya silmek için `/duyuru sil` yazabilirsiniz.")
+    elif data == "menu:change_pwd":
+        await query.message.reply_text("🔑 Şifrenizi değiştirmek için sohbet alanına `/sifredegistir yeni_şifre` yazabilirsiniz.")
+    elif data == "menu:reset_auth":
+        await query.message.reply_text("🧹 Tüm yetkileri sıfırlamak için sohbete `/yetkilerisifirla` yazabilirsiniz.")
+    elif data == "menu:stop_bot":
+        await query.message.reply_text("🛑 Botu kapatmak için sohbete `/kapat` yazabilirsiniz.")
+
 async def post_init(application: Application):
+
     commands = [
         BotCommand("start", "Botu başlatır"),
+        BotCommand("menu", "Ana menüyü gösterir"),
         BotCommand("giris", "Şifre ile yetki al (Örn: /giris 123)"),
         BotCommand("cikis", "Yetkini bırak ve çıkış yap"),
         BotCommand("sifredegistir", "(Admin) Şifreyi değiştir"),
@@ -698,6 +768,7 @@ def main():
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).post_init(post_init).build()
 
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("menu", start))
     app.add_handler(CommandHandler("giris", login_command))
     app.add_handler(CommandHandler("cikis", logout_command))
     app.add_handler(CommandHandler("sifredegistir", change_password_command))
@@ -716,12 +787,12 @@ def main():
             EDIT_CONTENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_content)],
             EDIT_IMAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, edit_image)],
         },
-        fallbacks=[CommandHandler("iptal", cancel_news)]
+        fallbacks=[CommandHandler("iptal", cancel_news), CallbackQueryHandler(cancel_action_callback, pattern="^cancel_action$")]
     )
     app.add_handler(edit_conv_handler)
     
     add_conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("haberekle", add_news_start)],
+        entry_points=[CommandHandler("haberekle", add_news_start), CallbackQueryHandler(add_news_start, pattern="^menu:add_news$")],
         states={
             TITLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_title)],
             SUMMARY: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_summary)],
@@ -730,10 +801,11 @@ def main():
             CATEGORY: [CallbackQueryHandler(ask_category, pattern="^cat:")],
             IMAGE: [MessageHandler((filters.PHOTO | filters.TEXT) & ~filters.COMMAND, ask_image)],
         },
-        fallbacks=[CommandHandler("iptal", cancel_news)]
+        fallbacks=[CommandHandler("iptal", cancel_news), CallbackQueryHandler(cancel_action_callback, pattern="^cancel_action$")]
     )
     app.add_handler(add_conv_handler)
     
+    app.add_handler(CallbackQueryHandler(menu_handler, pattern="^menu:"))
     app.add_handler(CallbackQueryHandler(button_handler))
     
     job_queue = app.job_queue
