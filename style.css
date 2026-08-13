@@ -24,7 +24,7 @@ body {
 
 
 .main-header {
-    position: fixed;
+    position: absolute;
     top: 25px;
     left: 0;
     width: 100%;
