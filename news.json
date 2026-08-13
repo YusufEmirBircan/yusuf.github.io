@@ -1,1 +1,22 @@
-[]
+[
+  {
+    "id": "news_450501143_1786616527",
+    "title": "Denizde yardım skandalı: Başrolde Mark Zuckerberg'in süper yatı var",
+    "summary": "Denizin ortasında mahsur kalan küçük bir teknenin çağrısı denizcilik dünyasını ayağa kaldırdı. Yardım talebini görmezden geldiği öne sürülen Zuckerberg'in süper yatının telsiz kanallarını kapatması uzmanların tepkisini çekerken, resmi veriler yaşanan olayı doğruladı.",
+    "category": "Teknoloji",
+    "source": "CHIP Online",
+    "sourceUrl": "https://www.chip.com.tr/guncel/denizde-yardim-skandali-basrolde-mark-zuckerbergin-super-yati-var_182691.html",
+    "image": "https://i.chip.com.tr/storage/files/images/2026/08/12/mark-zuckerbergin-superyatlari-launchpad-ve-wingman-alaska-aciklarindaki-suruklenme-olayinda-tepki-cekti-phjz.jpg",
+    "date": "2026-08-13 13:22"
+  },
+  {
+    "id": "news_995821910_1786616525",
+    "title": "Twitch’te dikkat çeken yapay zekâ ayarı: Açık bırakılırsa yayınlar eğitime gidebilir",
+    "summary": "Twitch, yayınların ve kanal içeriklerinin Amazon’un üretken yapay zekâ modellerinin eğitiminde kullanılmasını engelleyen yeni bir ayar sundu.",
+    "category": "Teknoloji",
+    "source": "CHIP Online",
+    "sourceUrl": "https://www.chip.com.tr/guncel/twitchte-dikkat-ceken-yapay-zeka-ayari-acik-birakilirsa-yayinlar-egitime-gidebilir_182708.html",
+    "image": "https://i.chip.com.tr/storage/files/images/2026/08/13/twitchte-dikkat-ceken-yapay-zeka-ayari-acik-birakilirsa-yayinlar-egitime-gidebilir-ir0i.jpg",
+    "date": "2026-08-13 13:22"
+  }
+]
