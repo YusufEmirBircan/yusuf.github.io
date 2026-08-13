@@ -3,6 +3,7 @@ import asyncio
 import json
 import time
 import requests
+import re
 import feedparser
 import base64
 import ssl
@@ -179,7 +180,11 @@ async def check_rss_and_notify(context: ContextTypes.DEFAULT_TYPE):
                     continue
 
                 title = entry.get("title", "Başlıksız")
-                summary = entry.get("summary", entry.get("description", ""))
+                raw_summary = entry.get("summary", entry.get("description", ""))
+                # HTML etiketlerini temizle
+                summary = re.sub(r'<[^>]+>', '', raw_summary).strip()
+                # Ek olarak &nbsp; vs varsa boşluğa çevir
+                summary = summary.replace("&nbsp;", " ")
 
                 image_url = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80"
                 if "media_content" in entry and len(entry.media_content) > 0:
